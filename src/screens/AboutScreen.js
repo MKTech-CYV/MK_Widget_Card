@@ -43,7 +43,7 @@ export default function AboutScreen() {
   const Phone = Icons.Phone || Icons.Info || View;
   const Globe = Icons.Globe || Icons.Info || View;
 
-  const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-compact.png?amount=0&addInfo=Donate%20MK%20eCard&accountName=TRAN%20MINH%20KHOI`;
+  const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-compact.png?amount=0&addInfo=Donate%20MK%20Widget%20Card&accountName=TRAN%20MINH%20KHOI`;
 
   return (
     <ScrollView 
@@ -55,7 +55,7 @@ export default function AboutScreen() {
       <View style={styles.headerRow}>
         <Image source={APP_LOGO} style={styles.miniLogo} />
         <View style={styles.headerText}>
-          <Text style={[styles.appName, { color: colors.text }]}>MK eCard</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>MK Widget Card</Text>
           <Text style={[styles.appVersion, { color: colors.textSecondary }]}>v1.0.0 • 2026</Text>
         </View>
         <View style={styles.aiBadge}>
@@ -69,7 +69,7 @@ export default function AboutScreen() {
           Cuộc cách mạng danh thiếp số.
         </Text>
         <Text style={[styles.description, { color: colors.textSecondary }]}>
-          Đây là dự án đặc biệt được phát triển <Text style={{ fontWeight: 'bold', color: colors.primary }}>hoàn toàn bằng AI (100%)</Text>. Từ dòng mã Swift native cho Widget đến giao diện React Native, mọi thứ đều được tối ưu hóa để mang lại trải nghiệm kết nối đỉnh cao và bảo mật tuyệt đối.
+          <Text style={{ fontWeight: 'bold', color: colors.text }}>MK Widget Card</Text> là dự án đặc biệt được phát triển <Text style={{ fontWeight: 'bold', color: colors.primary }}>hoàn toàn bằng AI (100%)</Text>. Từ dòng mã Swift native cho Widget đến giao diện React Native, mọi thứ đều được tối ưu hóa để mang lại trải nghiệm kết nối đỉnh cao và bảo mật tuyệt đối.
         </Text>
       </View>
 

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "MK_eCard",
-    "slug": "MK_eCard",
+    "name": "MK Widget Card",
+    "slug": "MK_Widget_Card",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
