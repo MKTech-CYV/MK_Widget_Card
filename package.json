@@ -1,5 +1,5 @@
 {
-  "name": "mk_ecard",
+  "name": "mk-widget-card",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {

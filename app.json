@@ -14,20 +14,22 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.MK-eCard",
+      "bundleIdentifier": "com.mktech.widgetcard",
       "infoPlist": {
-        "NSCameraUsageDescription": "Cho phép MK_eCard truy cập camera để quét mã QR danh thiếp."
+        "NSCameraUsageDescription": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp."
       }
     },
     "plugins": [
       [
         "expo-camera",
         {
-          "cameraPermission": "Cho phép MK_eCard truy cập camera để quét mã QR danh thiếp."
+          "cameraPermission": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp."
         }
       ]
     ],
     "android": {
+      "package": "com.mktech.widgetcard",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

@@ -1,91 +1,91 @@
-# MK Widget Card 📇
+# MK Widget Card 📇 - Code Your Vision
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![100% AI Developed](https://img.shields.io/badge/Developed%20with-100%25%20AI-green.svg)](https://tranminhkhoi.dev)
+[![Platform: iOS](https://img.shields.io/badge/Platform-iOS-blue.svg)](https://apple.com/ios)
 
-**MK Widget Card** là giải pháp danh thiếp kỹ thuật số (eCard) hiện đại dành cho iOS, cho phép bạn chia sẻ thông tin liên lạc và thông tin thanh toán qua mã QR ngay trên màn hình khóa hoặc màn hình chính thông qua hệ thống Widget chuyên nghiệp.
+**MK Widget Card** là một giải pháp danh thiếp kỹ thuật số đột phá dành cho hệ sinh thái iOS. Dự án cho phép người dùng cá nhân hóa trải nghiệm kết nối thông qua các Widget thông minh trên màn hình chính và màn hình khóa, tích hợp cả thông tin liên lạc (vCard) và thanh toán nhanh (VietQR).
 
 > [!IMPORTANT]
-> **Dự án này được phát triển hoàn toàn 100% bằng AI.** Từ kiến trúc hệ thống, mã nguồn React Native, cho đến các logic Swift Native cho iOS Widget và tối ưu hóa UI/UX.
+> **100% AI GENERATED:** Toàn bộ dự án này, từ cấu trúc thư mục, giao diện React Native, mã nguồn Swift Native cho Widget, cho đến tài liệu này, đều được phát triển hoàn toàn bởi trí tuệ nhân tạo (AI). Đây là minh chứng cho sức mạnh của AI trong việc xây dựng sản phẩm phần mềm thực tế hoàn chỉnh.
 
 ---
 
-## ✨ Tính năng nổi bật
+## ✨ Tính năng chính
 
-### 📱 Danh thiếp thông minh (eCard)
-- **Mã QR vCard chuẩn:** Cho phép người khác quét và lưu danh bạ trực tiếp vào điện thoại chỉ trong vài giây.
-- **Tùy biến thông tin:** Cập nhật họ tên, chức danh, công ty, SĐT, Email và ảnh đại diện một cách dễ dàng.
-- **Nâng cao nhận diện:** Nhúng Logo ứng dụng hoặc Logo cá nhân vào chính giữa mã QR với độ phân giải cao.
+### 📱 Hệ thống Danh thiếp Số (eCard)
+- **Mã QR vCard Chuẩn:** Chia sẻ thông tin liên hệ bao gồm Họ tên, Chức danh, Công ty, SĐT và Email chỉ với một lần quét. Tự động thêm vào danh bạ iPhone.
+- **Cá nhân hóa Logo:** Nhúng Logo ứng dụng hoặc ảnh cá nhân vào trung tâm mã QR để tăng tính chuyên nghiệp.
+- **Quản lý Avatar:** Hỗ trợ tải lên ảnh đại diện, tự động xử lý và hiển thị trên cả App và Widget.
 
-### 💸 Thanh toán nhanh (VietQR)
-- **Tích hợp VietQR:** Tự động tạo mã QR thanh toán chuẩn ngân hàng Việt Nam.
-- **Hỗ trợ đa ngân hàng:** Hỗ trợ hầu hết các ngân hàng lớn tại Việt Nam (MB, VCB, ICB, TCB, ACB, v.v.).
-- **Chuyển khoản tức thì:** Giúp việc nhận tiền hoặc thanh toán trở nên chuyên nghiệp và nhanh chóng hơn bao giờ hết.
+### 💸 Thanh toán nhanh VietQR
+- **Tích hợp VietQR API:** Tự động tạo mã QR thanh toán chuẩn NAPAS cho hơn 50 ngân hàng tại Việt Nam (MB, VCB, ICB, TCB, ACB, v.v.).
+- **Tiện lợi tối đa:** Cho phép người khác chuyển khoản hoặc nhận diện thông tin ngân hàng của bạn ngay lập tức mà không cần mở ứng dụng ngân hàng.
 
-### 🖼️ Hệ thống Widget đa dạng (4-in-1)
-Ứng dụng cung cấp 4 loại Widget riêng biệt cho iOS:
-1. **QR Liên hệ (Nhỏ):** Tập trung tối đa vào mã QR vCard.
-2. **QR Ngân hàng (Nhỏ):** Tập trung tối đa vào mã QR thanh toán.
-3. **Danh thiếp Ngang (Lớn):** Hiển thị QR Liên hệ kèm thông tin cá nhân chi tiết.
-4. **Thanh toán Ngang (Lớn):** Hiển thị QR Ngân hàng kèm thông tin tài khoản (Tên, STK, Ngân hàng).
-
-### 🌓 Chế độ hiển thị
-- Hỗ trợ đầy đủ **Dark Mode** và **Light Mode** theo hệ thống.
-- Giao diện thiết kế theo ngôn ngữ hiện đại, tinh tế của iOS.
+### 🖼️ Hệ thống Widget 4-trong-1 chuyên nghiệp
+Tận dụng tối đa sức mạnh của iOS WidgetKit với 4 loại Widget riêng biệt:
+1. **QR Liên hệ (Nhỏ):** Mã QR vCard toàn màn hình.
+2. **QR Ngân hàng (Nhỏ):** Mã QR VietQR toàn màn hình.
+3. **Danh thiếp Ngang (Lớn):** Kết hợp QR Liên hệ và thông tin cá nhân chi tiết.
+4. **Thanh toán Ngang (Lớn):** Kết hợp QR VietQR và thông tin số tài khoản.
 
 ---
 
-## 🛠️ Công nghệ sử dụng
+## 🛠️ Công nghệ cốt lõi
 
-- **Frontend:** React Native (Expo)
-- **Native Logic:** Swift (iOS WidgetKit, SwiftUI)
-- **Storage:** App Group (Shared container between App and Widget)
-- **QR Engine:** CoreImage (Native iOS) & react-native-qrcode-svg
-- **AI Tooling:** Developed 100% via Gemini/Claude via Gemini CLI.
+- **Frontend Framework:** React Native (Expo SDK 54)
+- **Native Extension:** Swift (WidgetKit, SwiftUI, CoreImage)
+- **Dữ liệu dùng chung:** App Group Container (iOS native shared storage)
+- **Thiết kế UI:** Modern iOS Design Language (hỗ trợ 100% Dark Mode & Light Mode)
+- **AI Tooling:** Gemini & Claude via Gemini CLI.
 
 ---
 
-## 🚀 Hướng dẫn cài đặt (Dành cho nhà phát triển)
+## 🚀 Hướng dẫn phát triển
 
-### Yêu cầu hệ thống
-- macOS với Xcode 15.0+
-- Node.js & npm/yarn
-- iPhone thật (để trải nghiệm Widget tốt nhất) hoặc Simulator iOS.
+### 📋 Yêu cầu hệ thống
+- **macOS** với phiên bản mới nhất.
+- **Xcode 15.0+** (bắt buộc để build Widget).
+- **Node.js 18+** & npm/yarn.
+- **iPhone** (thật) hoặc **iOS Simulator**.
 
-### Các bước cài đặt
-1. **Clone dự án:**
+### 🛠️ Các bước cài đặt
+1. **Clone Repo:**
    ```bash
    git clone https://github.com/minhkhoi-dev/mk-widget-card.git
    cd mk-widget-card
    ```
 
-2. **Cài đặt dependencies:**
+2. **Cài đặt Dependencies:**
    ```bash
    npm install
+   ```
+
+3. **Cấu hình Native (iOS):**
+   ```bash
    npx pod-install
    ```
 
-3. **Chạy ứng dụng:**
+4. **Chạy ứng dụng:**
    ```bash
    npx expo run:ios
    ```
 
 ---
 
-## 📄 Giấy phép
-
-Dự án được phát hành dưới giấy phép **MIT License**. Bạn có toàn quyền sử dụng, sửa đổi và phân phối lại mã nguồn này.
-
----
-
-## 👨‍💻 Tác giả
+## 👨‍💻 Tác giả & Liên hệ
 
 **TRAN MINH KHOI**
-- Website: [tranminhkhoi.dev](https://tranminhkhoi.dev)
-- Email: [contact@tranminhkhoi.dev](mailto:contact@tranminhkhoi.dev)
-- Hotline: 0988 20 40 60
+- **Website:** [tranminhkhoi.dev](https://tranminhkhoi.dev)
+- **Email:** [contact@tranminhkhoi.dev](mailto:contact@tranminhkhoi.dev)
+- **Hotline:** 0988 20 40 60
 
-Nếu bạn thấy dự án này hữu ích, hãy tặng một ⭐️ trên Github hoặc ủng hộ nhà phát triển thông qua phần **Donate** trực tiếp trong ứng dụng nhé!
+Nếu bạn thấy dự án này thú vị hoặc có ích cho cộng đồng, hãy ủng hộ chúng tôi bằng một ⭐️ hoặc mời nhà phát triển một ly cà phê thông qua mục **Donate** trong ứng dụng nhé!
 
 ---
-*© 2026 MK Widget Card - Code Your Vision*
+
+## 📄 Giấy phép
+
+Phát hành dưới giấy phép **MIT License**. Xem file `LICENSE` để biết thêm chi tiết.
+
+*© 2026 MK Widget Card - Code Your Vision. Developed by AI.*

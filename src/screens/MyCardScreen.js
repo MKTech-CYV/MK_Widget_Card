@@ -10,7 +10,8 @@ import {
   Dimensions,
   Image,
   Modal,
-  FlatList
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
@@ -45,6 +46,39 @@ const POPULAR_BANKS = [
   { id: 'STB', name: 'Sacombank' },
 ];
 
+const BANK_CODE_ALIASES = {
+  'MB BANK': 'MB',
+  MBBANK: 'MB',
+  VIETCOMBANK: 'VCB',
+  VIETINBANK: 'ICB',
+  TECHCOMBANK: 'TCB',
+  VPBANK: 'VPB',
+  TPBANK: 'TPB',
+  SACOMBANK: 'STB',
+};
+
+const normalizeBankCode = (value) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  const bank = POPULAR_BANKS.find(item => item.id === normalized || item.name.toUpperCase() === normalized);
+  return bank?.id || BANK_CODE_ALIASES[normalized] || normalized.replace(/[^A-Z0-9]/g, '');
+};
+
+const sanitizeBankAccount = (value) => String(value || '').replace(/[^\d]/g, '');
+
+const getBankDisplayName = (bankCode) => {
+  const bank = POPULAR_BANKS.find(item => item.id === bankCode);
+  return bank?.name || bankCode;
+};
+
+const buildVietQrUrl = (data, template = 'compact2') => {
+  const bankCode = normalizeBankCode(data?.bankName);
+  const bankAccount = sanitizeBankAccount(data?.bankAccount);
+  if (!bankCode || !bankAccount) return null;
+
+  const accountName = encodeURIComponent(String(data?.fullName || '').trim());
+  return `https://img.vietqr.io/image/${bankCode}-${bankAccount}-${template}.png?accountName=${accountName}`;
+};
+
 export default function MyCardScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -53,6 +87,8 @@ export default function MyCardScreen() {
   const [activeTab, setActiveTab] = useState('contact');
   const [showCountryModal, setShowCountryModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
+  const [bankQrLoading, setBankQrLoading] = useState(false);
+  const [bankQrFailed, setBankQrFailed] = useState(false);
   
   const [formData, setFormData] = useState({
     fullName: '', phone: '', email: '', title: '', company: '', avatar: null,
@@ -71,7 +107,8 @@ export default function MyCardScreen() {
       setFormData({
         ...data,
         countryCode: data.countryCode || '+84',
-        bankName: data.bankName || 'MB'
+        bankName: normalizeBankCode(data.bankName) || 'MB',
+        bankAccount: sanitizeBankAccount(data.bankAccount)
       });
     }
   };
@@ -91,10 +128,22 @@ export default function MyCardScreen() {
   };
 
   const handleSave = async () => {
-    if (!formData.fullName) return Alert.alert('Lỗi', 'Vui lòng nhập họ tên');
+    const sanitizedData = {
+      ...formData,
+      fullName: formData.fullName.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
+      title: formData.title.trim(),
+      company: formData.company.trim(),
+      bankName: normalizeBankCode(formData.bankName) || 'MB',
+      bankAccount: sanitizeBankAccount(formData.bankAccount),
+    };
+
+    if (!sanitizedData.fullName) return Alert.alert('Lỗi', 'Vui lòng nhập họ tên');
     try {
-      await StorageService.setUserData(formData);
-      setUserData(formData);
+      await StorageService.setUserData(sanitizedData);
+      setUserData(sanitizedData);
+      setFormData(sanitizedData);
       setIsEditing(false);
       Alert.alert('Thành công', 'Thông tin đã được đồng bộ với Widget');
     } catch (error) {
@@ -106,8 +155,17 @@ export default function MyCardScreen() {
     `BEGIN:VCARD\nVERSION:3.0\nFN:${userData.fullName}\nTEL:${userData.countryCode}${userData.phone}\nEMAIL:${userData.email}\nORG:${userData.company}\nTITLE:${userData.title}\nEND:VCARD` 
     : '';
 
-  const bankQrUrl = userData?.bankName && userData?.bankAccount ? 
-    `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-compact.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
+  const normalizedBankCode = normalizeBankCode(userData?.bankName);
+  const bankAccount = sanitizeBankAccount(userData?.bankAccount);
+  const bankDisplayName = getBankDisplayName(normalizedBankCode);
+  const hasBankInfo = Boolean(normalizedBankCode && bankAccount);
+  const bankQrUrl = buildVietQrUrl(userData);
+  const bankQrSize = Math.min(width * 0.62, 280);
+
+  useEffect(() => {
+    setBankQrFailed(false);
+    setBankQrLoading(Boolean(bankQrUrl));
+  }, [bankQrUrl]);
 
   const SelectionModal = ({ visible, onClose, data, onSelect, title, selectedId, type }) => (
     <Modal visible={visible} animationType="slide" transparent>
@@ -209,7 +267,7 @@ export default function MyCardScreen() {
               </TouchableOpacity>
             </View>
 
-            <InputField label="Số tài khoản" value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: v})} placeholder="0335337802" keyboardType="numeric" colors={colors} />
+            <InputField label="Số tài khoản" value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: sanitizeBankAccount(v)})} placeholder="0335337802" keyboardType="numeric" colors={colors} />
 
             <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleSave}>
               <Save color="#fff" size={20} />
@@ -301,21 +359,53 @@ export default function MyCardScreen() {
             </>
           ) : (
             <View style={styles.bankView}>
-               <Text style={[styles.bankTitle, { color: colors.text }]}>Mã QR Thanh toán</Text>
-               <View style={styles.qrSection}>
-                <View style={[styles.qrContainer, { padding: 5 }]}>
-                  {bankQrUrl ? (
-                    <Image source={{ uri: bankQrUrl }} style={{ width: width * 0.6, height: width * 0.6 }} resizeMode="contain" />
+              <View style={styles.bankHeader}>
+                <View style={[styles.bankBadge, { backgroundColor: `${colors.primary}14` }]}>
+                  <Landmark color={colors.primary} size={16} />
+                  <Text style={[styles.bankBadgeText, { color: colors.primary }]}>VIETQR</Text>
+                </View>
+                <Text style={[styles.bankTitle, { color: colors.text }]}>Thanh toán nhanh</Text>
+                <Text style={[styles.bankSubtitle, { color: colors.textSecondary }]}>QR được tạo trực tiếp từ VietQR</Text>
+              </View>
+
+              <View style={styles.qrSection}>
+                <View style={[styles.qrContainer, styles.bankQrContainer]}>
+                  {bankQrUrl && !bankQrFailed ? (
+                    <View style={[styles.bankQrFrame, { width: bankQrSize, height: bankQrSize }]}>
+                      {bankQrLoading && (
+                        <View style={styles.qrLoadingOverlay}>
+                          <ActivityIndicator color={colors.primary} />
+                        </View>
+                      )}
+                      <Image
+                        source={{ uri: bankQrUrl }}
+                        style={styles.bankQrImage}
+                        resizeMode="contain"
+                        onLoadStart={() => setBankQrLoading(true)}
+                        onLoadEnd={() => setBankQrLoading(false)}
+                        onError={() => {
+                          setBankQrLoading(false);
+                          setBankQrFailed(true);
+                        }}
+                      />
+                    </View>
                   ) : (
-                    <View style={{ width: width * 0.6, height: width * 0.6, justifyContent: 'center', alignItems: 'center' }}>
-                      <Text style={{ color: colors.textSecondary }}>Chưa có thông tin ngân hàng</Text>
+                    <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
+                      <Landmark color={colors.textSecondary} size={34} />
+                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>
+                        {hasBankInfo ? 'Không tải được QR' : 'Chưa có thông tin ngân hàng'}
+                      </Text>
+                      <Text style={[styles.bankPlaceholderText, { color: colors.textSecondary }]}>
+                        {hasBankInfo ? 'Kiểm tra kết nối mạng rồi mở lại màn hình này.' : 'Thêm ngân hàng và số tài khoản để tạo VietQR.'}
+                      </Text>
                     </View>
                   )}
                 </View>
-                <View style={{ marginTop: 15, alignItems: 'center' }}>
-                  <Text style={[styles.cardName, { color: colors.text }]}>{userData.bankName}</Text>
-                  <Text style={[styles.cardTitle, { color: colors.primary, fontWeight: '800', fontSize: 22 }]}>{userData.bankAccount}</Text>
-                  <Text style={[styles.cardCompany, { color: colors.textSecondary }]}>{userData.fullName}</Text>
+
+                <View style={styles.bankInfoPanel}>
+                  <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.fullName}</Text>
+                  <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{bankDisplayName}</Text>
+                  <Text style={[styles.bankAccountText, { color: colors.primary }]}>{bankAccount || 'Chưa nhập STK'}</Text>
                 </View>
               </View>
             </View>
@@ -379,8 +469,23 @@ const styles = StyleSheet.create({
   qrSection: { alignItems: 'center', marginVertical: 10 },
   qrContainer: { padding: 12, backgroundColor: '#FFF', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   qrHint: { marginTop: 10, fontSize: 12, color: '#8E8E93', fontWeight: '600' },
-  bankView: { alignItems: 'center' },
-  bankTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  bankView: { alignItems: 'center', width: '100%' },
+  bankHeader: { alignItems: 'center', marginBottom: 14 },
+  bankBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginBottom: 10 },
+  bankBadgeText: { marginLeft: 6, fontSize: 12, fontWeight: '800' },
+  bankTitle: { fontSize: 21, fontWeight: '800' },
+  bankSubtitle: { fontSize: 12, fontWeight: '600', marginTop: 4 },
+  bankQrContainer: { padding: 8, borderRadius: 24 },
+  bankQrFrame: { justifyContent: 'center', alignItems: 'center' },
+  bankQrImage: { width: '100%', height: '100%' },
+  qrLoadingOverlay: { position: 'absolute', zIndex: 1, top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 18 },
+  bankQrPlaceholder: { justifyContent: 'center', alignItems: 'center', padding: 18, borderWidth: 1, borderStyle: 'dashed', borderRadius: 18 },
+  bankPlaceholderTitle: { marginTop: 12, fontSize: 15, fontWeight: '800', textAlign: 'center' },
+  bankPlaceholderText: { marginTop: 6, fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 17 },
+  bankInfoPanel: { marginTop: 16, alignItems: 'center', width: '100%' },
+  bankOwnerName: { maxWidth: '100%', fontSize: 21, fontWeight: '800' },
+  bankNameText: { marginTop: 4, fontSize: 13, fontWeight: '700' },
+  bankAccountText: { marginTop: 4, fontSize: 24, fontWeight: '900', letterSpacing: 0 },
   editButton: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl, padding: Spacing.md },
   editButtonText: { fontSize: 16, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

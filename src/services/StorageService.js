@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 import DefaultPreference from 'react-native-default-preference';
 
 const APP_GROUP = 'group.com.mk.ecard';
@@ -13,9 +13,11 @@ export const StorageService = {
     const dataString = JSON.stringify(data);
     await DefaultPreference.set('userData', dataString);
     
-    // Đồng bộ Widget ngay lập tức
-    if (Platform.OS === 'ios' && WidgetUpdater) {
-      WidgetUpdater.reloadAll();
+    // Đồng bộ Widget ngay lập tức trên cả iOS và Android.
+    try {
+      WidgetUpdater?.reloadAll?.();
+    } catch (error) {
+      console.log('Widget reload failed', error);
     }
   },
 
