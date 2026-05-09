@@ -16,7 +16,7 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Edit2, Save, Camera, User as UserIcon, Landmark, ChevronDown, Check, Globe } from 'lucide-react-native';
+import { Edit2, Save, Camera, User as UserIcon, Landmark, ChevronDown, Check, Globe, Search, X } from 'lucide-react-native';
 import { useTheme, Spacing } from '../constants/Theme';
 import { StorageService } from '../services/StorageService';
 import Footer from '../components/Footer';
@@ -33,52 +33,6 @@ const COUNTRY_CODES = [
   { code: '+65', name: 'Singapore' },
 ];
 
-const POPULAR_BANKS = [
-  { id: 'MB', name: 'MB Bank' },
-  { id: 'VCB', name: 'Vietcombank' },
-  { id: 'ICB', name: 'VietinBank' },
-  { id: 'BIDV', name: 'BIDV' },
-  { id: 'TCB', name: 'Techcombank' },
-  { id: 'ACB', name: 'ACB' },
-  { id: 'VPB', name: 'VPBank' },
-  { id: 'VIB', name: 'VIB' },
-  { id: 'TPB', name: 'TPBank' },
-  { id: 'STB', name: 'Sacombank' },
-];
-
-const BANK_CODE_ALIASES = {
-  'MB BANK': 'MB',
-  MBBANK: 'MB',
-  VIETCOMBANK: 'VCB',
-  VIETINBANK: 'ICB',
-  TECHCOMBANK: 'TCB',
-  VPBANK: 'VPB',
-  TPBANK: 'TPB',
-  SACOMBANK: 'STB',
-};
-
-const normalizeBankCode = (value) => {
-  const normalized = String(value || '').trim().toUpperCase();
-  const bank = POPULAR_BANKS.find(item => item.id === normalized || item.name.toUpperCase() === normalized);
-  return bank?.id || BANK_CODE_ALIASES[normalized] || normalized.replace(/[^A-Z0-9]/g, '');
-};
-
-const sanitizeBankAccount = (value) => String(value || '').replace(/[^\d]/g, '');
-
-const getBankDisplayName = (bankCode) => {
-  const bank = POPULAR_BANKS.find(item => item.id === bankCode);
-  return bank?.name || bankCode;
-};
-
-const buildVietQrUrl = (data, template = 'compact2') => {
-  const bankCode = normalizeBankCode(data?.bankName);
-  const bankAccount = sanitizeBankAccount(data?.bankAccount);
-  if (!bankCode || !bankAccount) return null;
-
-  const accountName = encodeURIComponent(String(data?.fullName || '').trim());
-  return `https://img.vietqr.io/image/${bankCode}-${bankAccount}-${template}.png?accountName=${accountName}`;
-};
-
 export default function MyCardScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -90,6 +44,11 @@ export default function MyCardScreen() {
   const [bankQrLoading, setBankQrLoading] = useState(false);
   const [bankQrFailed, setBankQrFailed] = useState(false);
   
+  // Dynamic Banks State
+  const [banks, setBanks] = useState([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [searchQuery, setSearchBarQuery] = useState('');
+  
   const [formData, setFormData] = useState({
     fullName: '', phone: '', email: '', title: '', company: '', avatar: null,
     bankName: 'MB', bankAccount: '', countryCode: '+84'
@@ -98,7 +57,23 @@ export default function MyCardScreen() {
   useEffect(() => {
     StorageService.init();
     loadData();
+    fetchBanks();
   }, []);
+
+  const fetchBanks = async () => {
+    setLoadingBanks(true);
+    try {
+      const response = await fetch('https://api.vietqr.io/v2/banks');
+      const result = await response.json();
+      if (result.code === '00') {
+        setBanks(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching banks:', error);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
 
   const loadData = async () => {
     const data = await StorageService.getUserData();
@@ -107,8 +82,8 @@ export default function MyCardScreen() {
       setFormData({
         ...data,
         countryCode: data.countryCode || '+84',
-        bankName: normalizeBankCode(data.bankName) || 'MB',
-        bankAccount: sanitizeBankAccount(data.bankAccount)
+        bankName: data.bankName || 'MB',
+        bankAccount: data.bankAccount || ''
       });
     }
   };
@@ -135,8 +110,6 @@ export default function MyCardScreen() {
       phone: formData.phone.trim(),
       title: formData.title.trim(),
       company: formData.company.trim(),
-      bankName: normalizeBankCode(formData.bankName) || 'MB',
-      bankAccount: sanitizeBankAccount(formData.bankAccount),
     };
 
     if (!sanitizedData.fullName) return Alert.alert('Lỗi', 'Vui lòng nhập họ tên');
@@ -155,11 +128,14 @@ export default function MyCardScreen() {
     `BEGIN:VCARD\nVERSION:3.0\nFN:${userData.fullName}\nTEL:${userData.countryCode}${userData.phone}\nEMAIL:${userData.email}\nORG:${userData.company}\nTITLE:${userData.title}\nEND:VCARD` 
     : '';
 
-  const normalizedBankCode = normalizeBankCode(userData?.bankName);
-  const bankAccount = sanitizeBankAccount(userData?.bankAccount);
-  const bankDisplayName = getBankDisplayName(normalizedBankCode);
-  const hasBankInfo = Boolean(normalizedBankCode && bankAccount);
-  const bankQrUrl = buildVietQrUrl(userData);
+  const getBankName = (code) => {
+    const bank = banks.find(b => b.code === code);
+    return bank ? bank.shortName || bank.name : code;
+  };
+
+  const bankQrUrl = userData?.bankName && userData?.bankAccount ? 
+    `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-compact2.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
+  
   const bankQrSize = Math.min(width * 0.62, 280);
 
   useEffect(() => {
@@ -167,36 +143,68 @@ export default function MyCardScreen() {
     setBankQrLoading(Boolean(bankQrUrl));
   }, [bankQrUrl]);
 
+  const filteredBanks = banks.filter(bank => 
+    bank.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    bank.shortName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    bank.code.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const SelectionModal = ({ visible, onClose, data, onSelect, title, selectedId, type }) => (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose}><Text style={{ color: colors.primary, fontWeight: '700' }}>Hủy</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
           </View>
-          <FlatList
-            data={data}
-            keyExtractor={item => item.code || item.id}
-            renderItem={({ item }) => {
-              const id = item.code || item.id;
-              const isSelected = selectedId === id;
-              return (
-                <TouchableOpacity 
-                  style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]} 
-                  onPress={() => { onSelect(id); onClose(); }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {type === 'country' ? <Globe size={18} color={colors.textSecondary} style={{ marginRight: 10 }} /> : <Landmark size={18} color={colors.textSecondary} style={{ marginRight: 10 }} />}
-                    <Text style={[styles.modalItemText, { color: colors.text }]}>
-                      {item.name} ({id})
-                    </Text>
-                  </View>
-                  {isSelected && <Check color={colors.primary} size={20} />}
-                </TouchableOpacity>
-              );
-            }}
-          />
+          
+          {type === 'bank' && (
+            <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
+              <Search color={colors.textSecondary} size={18} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Tìm kiếm ngân hàng..."
+                placeholderTextColor={colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchBarQuery}
+              />
+            </View>
+          )}
+
+          {loadingBanks && type === 'bank' ? (
+            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+          ) : (
+            <FlatList
+              data={data}
+              keyExtractor={item => item.code || item.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const id = item.code || item.id;
+                const isSelected = selectedId === id;
+                return (
+                  <TouchableOpacity 
+                    style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]} 
+                    onPress={() => { onSelect(id); onClose(); setSearchBarQuery(''); }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      {type === 'country' ? (
+                        <Globe size={18} color={colors.textSecondary} style={{ marginRight: 12 }} />
+                      ) : (
+                        <Image source={{ uri: item.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.modalItemText, { color: colors.text }]} numberOfLines={1}>
+                          {item.shortName || item.name}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>{item.code || item.id}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check color={colors.primary} size={20} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
         </View>
       </View>
     </Modal>
@@ -262,12 +270,12 @@ export default function MyCardScreen() {
                 style={[styles.input, { backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
                 onPress={() => setShowBankModal(true)}
               >
-                <Text style={{ color: colors.text, fontSize: 16 }}>{formData.bankName}</Text>
+                <Text style={{ color: colors.text, fontSize: 16 }}>{getBankName(formData.bankName)}</Text>
                 <ChevronDown color={colors.textSecondary} size={20} />
               </TouchableOpacity>
             </View>
 
-            <InputField label="Số tài khoản" value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: sanitizeBankAccount(v)})} placeholder="0335337802" keyboardType="numeric" colors={colors} />
+            <InputField label="Số tài khoản" value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: v.replace(/[^\d]/g, '')})} placeholder="0335337802" keyboardType="numeric" colors={colors} />
 
             <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleSave}>
               <Save color="#fff" size={20} />
@@ -288,9 +296,9 @@ export default function MyCardScreen() {
         />
         <SelectionModal 
           visible={showBankModal} 
-          onClose={() => setShowBankModal(false)} 
-          data={POPULAR_BANKS} 
-          onSelect={id => setFormData({...formData, bankName: id})}
+          onClose={() => { setShowBankModal(false); setSearchBarQuery(''); }} 
+          data={filteredBanks} 
+          onSelect={code => setFormData({...formData, bankName: code})}
           title="Chọn ngân hàng"
           selectedId={formData.bankName}
           type="bank"
@@ -365,7 +373,6 @@ export default function MyCardScreen() {
                   <Text style={[styles.bankBadgeText, { color: colors.primary }]}>VIETQR</Text>
                 </View>
                 <Text style={[styles.bankTitle, { color: colors.text }]}>Thanh toán nhanh</Text>
-                <Text style={[styles.bankSubtitle, { color: colors.textSecondary }]}>QR được tạo trực tiếp từ VietQR</Text>
               </View>
 
               <View style={styles.qrSection}>
@@ -392,20 +399,15 @@ export default function MyCardScreen() {
                   ) : (
                     <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
                       <Landmark color={colors.textSecondary} size={34} />
-                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>
-                        {hasBankInfo ? 'Không tải được QR' : 'Chưa có thông tin ngân hàng'}
-                      </Text>
-                      <Text style={[styles.bankPlaceholderText, { color: colors.textSecondary }]}>
-                        {hasBankInfo ? 'Kiểm tra kết nối mạng rồi mở lại màn hình này.' : 'Thêm ngân hàng và số tài khoản để tạo VietQR.'}
-                      </Text>
+                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>Không tải được QR</Text>
                     </View>
                   )}
                 </View>
 
                 <View style={styles.bankInfoPanel}>
                   <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.fullName}</Text>
-                  <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{bankDisplayName}</Text>
-                  <Text style={[styles.bankAccountText, { color: colors.primary }]}>{bankAccount || 'Chưa nhập STK'}</Text>
+                  <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{getBankName(userData.bankName)}</Text>
+                  <Text style={[styles.bankAccountText, { color: colors.primary }]}>{userData.bankAccount}</Text>
                 </View>
               </View>
             </View>
@@ -474,14 +476,12 @@ const styles = StyleSheet.create({
   bankBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginBottom: 10 },
   bankBadgeText: { marginLeft: 6, fontSize: 12, fontWeight: '800' },
   bankTitle: { fontSize: 21, fontWeight: '800' },
-  bankSubtitle: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   bankQrContainer: { padding: 8, borderRadius: 24 },
   bankQrFrame: { justifyContent: 'center', alignItems: 'center' },
   bankQrImage: { width: '100%', height: '100%' },
   qrLoadingOverlay: { position: 'absolute', zIndex: 1, top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 18 },
   bankQrPlaceholder: { justifyContent: 'center', alignItems: 'center', padding: 18, borderWidth: 1, borderStyle: 'dashed', borderRadius: 18 },
   bankPlaceholderTitle: { marginTop: 12, fontSize: 15, fontWeight: '800', textAlign: 'center' },
-  bankPlaceholderText: { marginTop: 6, fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 17 },
   bankInfoPanel: { marginTop: 16, alignItems: 'center', width: '100%' },
   bankOwnerName: { maxWidth: '100%', fontSize: 21, fontWeight: '800' },
   bankNameText: { marginTop: 4, fontSize: 13, fontWeight: '700' },
@@ -489,9 +489,12 @@ const styles = StyleSheet.create({
   editButton: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl, padding: Spacing.md },
   editButtonText: { fontSize: 16, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, height: '60%' },
+  modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, height: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: 'bold' },
-  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.05)', paddingHorizontal: 10, borderRadius: 10 },
-  modalItemText: { fontSize: 16, fontWeight: '500' }
+  modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.05)', paddingHorizontal: 10, borderRadius: 10 },
+  modalItemText: { fontSize: 15, fontWeight: '600' },
+  bankLogoSmall: { width: 40, height: 25, marginRight: 12 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, marginBottom: 15 },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 15, fontWeight: '500' }
 });
