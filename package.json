@@ -30,5 +30,5 @@
     "react-native-svg": "15.12.1",
     "react-native-vector-icons": "^10.3.0"
   },
-  "private": true
+  "private": false
 }
