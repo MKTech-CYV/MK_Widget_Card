@@ -71,7 +71,7 @@ export default function SettingsScreen({ navigation }) {
           <SettingItem 
             icon={<Bell size={22} color="#FF9500" />} 
             label={t('settings.notifications')} 
-            onPress={() => {}}
+            onPress={() => navigation.navigate('Notifications')}
             colors={colors}
           />
         </View>

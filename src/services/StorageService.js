@@ -33,5 +33,34 @@ export const StorageService = {
   getAppPreferences: async () => {
     const data = await DefaultPreference.get('appPreferences');
     return data ? JSON.parse(data) : null;
-  }
+  },
+
+  setPushToken: async (token) => {
+    if (!token) return;
+    await DefaultPreference.set('expoPushToken', `${token}`);
+  },
+
+  getPushToken: async () => {
+    return await DefaultPreference.get('expoPushToken');
+  },
+
+  getNotifications: async () => {
+    const data = await DefaultPreference.get('notifications');
+    return data ? JSON.parse(data) : [];
+  },
+
+  setNotifications: async (notifications) => {
+    await DefaultPreference.set('notifications', JSON.stringify(notifications || []));
+  },
+
+  addNotification: async (notification) => {
+    const current = await StorageService.getNotifications();
+    const next = [notification, ...current].slice(0, 200);
+    await StorageService.setNotifications(next);
+    return next;
+  },
+
+  clearNotifications: async () => {
+    await StorageService.setNotifications([]);
+  },
 };

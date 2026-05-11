@@ -241,6 +241,7 @@ export default function ScanScreen() {
         visible={Boolean(scanResult)}
         result={scanResult}
         colors={colors}
+        t={t}
         isSaving={savingContact}
         isSaved={contactSaved}
         onSave={handleSaveContact}
@@ -266,7 +267,7 @@ const DetailRow = ({ icon: Icon, label, value, colors }) => {
   );
 };
 
-const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, onClose }) => {
+const ScanResultModal = ({ visible, result, colors, t, isSaving, isSaved, onSave, onClose }) => {
   if (!result) return null;
 
   const canSave = result.isVCard && Boolean(result.fullName) && !isSaved;

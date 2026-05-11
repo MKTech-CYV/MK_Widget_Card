@@ -170,6 +170,14 @@ const translations = {
       termsTitle: 'Điều khoản & Điều kiện',
       versionLabel: 'Phiên bản',
     },
+    notifications: {
+      title: 'Thông báo',
+      emptyTitle: 'Chưa có thông báo',
+      emptyDesc: 'Khi có thông báo mới, chúng sẽ hiển thị tại đây.',
+      clearTitle: 'Xóa tất cả thông báo?',
+      clearDesc: 'Hành động này sẽ xóa toàn bộ lịch sử thông báo trên thiết bị.',
+      clearAction: 'Xóa',
+    },
     footer: {
       copyright: '© 2026 MKTech - Code Your Vision. Developed with',
     },
@@ -335,6 +343,14 @@ const translations = {
       system: 'System',
       termsTitle: 'Terms & Conditions',
       termsHeader: 'Terms & Conditions',
+    },
+    notifications: {
+      title: 'Notifications',
+      emptyTitle: 'No notifications yet',
+      emptyDesc: 'New notifications will show up here.',
+      clearTitle: 'Clear all notifications?',
+      clearDesc: 'This will remove the entire notification history on this device.',
+      clearAction: 'Clear',
     },
     footer: {
       copyright: '© 2026 MKTech - Code Your Vision. Developed with',

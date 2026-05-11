@@ -8,6 +8,7 @@ import MyCardScreen from '../screens/MyCardScreen';
 import ScanScreen from '../screens/ScanScreen';
 import AboutScreen from '../screens/AboutScreen';
 import SettingsScreen, { TermsScreen } from '../screens/SettingsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import { useTheme } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
@@ -26,6 +27,7 @@ function SettingsStack() {
       contentStyle: { backgroundColor: colors.background }
     }}>
       <Stack.Screen name="SettingsMain" component={SettingsScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="Terms" component={TermsScreen} />
     </Stack.Navigator>
   );

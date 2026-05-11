@@ -16,10 +16,13 @@
     "@react-navigation/stack": "^7.8.12",
     "expo": "~54.0.33",
     "expo-camera": "~17.0.10",
-    "expo-contacts": "^55.0.14",
+    "expo-constants": "~18.0.13",
+    "expo-contacts": "~15.0.11",
+    "expo-device": "~8.0.10",
     "expo-image-picker": "~17.0.11",
     "expo-insights": "~0.10.8",
     "expo-linking": "~8.0.12",
+    "expo-notifications": "~0.32.17",
     "expo-status-bar": "~3.0.9",
     "lucide-react-native": "^1.14.0",
     "react": "19.1.0",
@@ -32,5 +35,8 @@
     "react-native-svg": "15.12.1",
     "react-native-vector-icons": "^10.3.0"
   },
-  "private": false
+  "private": false,
+  "devDependencies": {
+    "expo-server-sdk": "^6.1.0"
+  }
 }

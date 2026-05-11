@@ -138,15 +138,28 @@ export default function MyCardScreen() {
   };
 
   const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(t('common.error'), t('myCard.imagePermissionDenied'));
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
       base64: true,
     });
-    if (!result.canceled) {
-      setFormData({ ...formData, avatar: `data:image/jpeg;base64,${result.assets[0].base64}` });
+
+    if (!result.canceled && result.assets?.length) {
+      const asset = result.assets[0];
+      if (asset.base64) {
+        setFormData({ ...formData, avatar: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}` });
+      } else if (asset.uri) {
+        setFormData({ ...formData, avatar: asset.uri });
+      }
     }
   };
 
