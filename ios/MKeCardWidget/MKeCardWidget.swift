@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import CoreImage.CIFilterBuiltins
+import UIKit
 
 private enum WidgetColors {
     static let background = Color.white
@@ -9,6 +10,11 @@ private enum WidgetColors {
     static let accent = Color(red: 0.0, green: 0.38, blue: 0.84)
     static let divider = Color(red: 0.90, green: 0.93, blue: 0.96)
 }
+
+private let qrRenderContext = CIContext(options: [
+    .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+    .outputColorSpace: CGColorSpaceCreateDeviceRGB()
+])
 
 struct UserData: Codable {
     let fullName: String
@@ -278,15 +284,13 @@ struct QRWithLogo: View {
     
     var body: some View {
         ZStack {
-            if let qrImage = generateQRCode(from: content) {
+            if let qrImage = generateQRCode(from: content, targetSize: size) {
                 Image(uiImage: qrImage)
                     .interpolation(.none)
                     .renderingMode(.original)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size, height: size)
-
-                AppLogoBadge(logo: loadAppLogo(), size: size)
             } else {
                 QRPlaceholder(size: size)
             }
@@ -296,16 +300,19 @@ struct QRWithLogo: View {
         .widgetAccentable(false)
     }
     
-    func generateQRCode(from string: String) -> UIImage? {
+    func generateQRCode(from string: String, targetSize: CGFloat) -> UIImage? {
         guard !string.isEmpty else { return nil }
 
         let filter = CIFilter.qrCodeGenerator()
         filter.setValue(Data(string.utf8), forKey: "inputMessage")
-        filter.setValue("H", forKey: "inputCorrectionLevel")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
 
         guard let outputImage = filter.outputImage else { return nil }
 
-        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let outputExtent = outputImage.extent.integral
+        let minimumPixelSize = max(targetSize * 3, 240)
+        let scale = max(1, floor(minimumPixelSize / outputExtent.width))
+        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let coloredImage = scaledImage.applyingFilter(
             "CIFalseColor",
             parameters: [
@@ -314,12 +321,20 @@ struct QRWithLogo: View {
             ]
         )
 
-        let context = CIContext(options: [.workingColorSpace: CGColorSpaceCreateDeviceRGB()])
-        guard let cgImage = context.createCGImage(coloredImage, from: coloredImage.extent) else {
+        let imageExtent = coloredImage.extent.integral
+        guard let cgImage = qrRenderContext.createCGImage(coloredImage, from: imageExtent) else {
             return nil
         }
 
-        return UIImage(cgImage: cgImage)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(size: imageExtent.size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: imageExtent.size))
+            UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: imageExtent.size))
+        }
     }
 }
 
@@ -336,53 +351,6 @@ struct QRPlaceholder: View {
         .foregroundColor(WidgetColors.secondaryText)
         .frame(width: size, height: size)
         .background(Color.white)
-    }
-}
-
-private final class WidgetBundleToken {}
-
-private func loadAppLogo() -> UIImage? {
-    let bundles = [Bundle.main, Bundle(for: WidgetBundleToken.self)]
-    
-    for bundle in bundles {
-        if let logo = UIImage(named: "AppLogo", in: bundle, compatibleWith: nil) {
-            return logo
-        }
-        
-        if let path = bundle.path(forResource: "AppLogo", ofType: "png"),
-           let logo = UIImage(contentsOfFile: path) {
-            return logo
-        }
-    }
-    
-    return UIImage(named: "AppLogo")
-}
-
-struct AppLogoBadge: View {
-    let logo: UIImage?
-    let size: CGFloat
-    
-    var body: some View {
-        let badgeSize = size * 0.3
-        let imageSize = size * 0.23
-        
-        ZStack {
-            RoundedRectangle(cornerRadius: badgeSize * 0.22, style: .continuous)
-                .fill(Color.white)
-            
-            if let logo {
-                Image(uiImage: logo)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: imageSize, height: imageSize)
-                    .clipShape(RoundedRectangle(cornerRadius: imageSize * 0.16, style: .continuous))
-            } else {
-                Text("MK")
-                    .font(.system(size: size * 0.11, weight: .black))
-                    .foregroundColor(WidgetColors.accent)
-            }
-        }
-        .frame(width: badgeSize, height: badgeSize)
     }
 }
 

@@ -45,7 +45,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Cho phép MK_eCard truy cập camera để quét mã QR danh thiếp.</string>
+	<string>Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Cho phép MK Widget Card lưu eCard đã quét vào danh bạ của bạn.</string>
 	<key>NSMicrophoneUsageDescription</key>

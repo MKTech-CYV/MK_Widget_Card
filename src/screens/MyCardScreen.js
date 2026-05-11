@@ -27,7 +27,6 @@ import { getTranslation } from '../constants/i18n';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
-const APP_LOGO = require('../../assets/icon.png');
 
 const ALL_COUNTRIES = [
   { code: '84', name: 'Việt Nam' }, { code: '1', name: 'United States' }, { code: '44', name: 'United Kingdom' },
@@ -146,7 +145,7 @@ export default function MyCardScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
@@ -198,8 +197,7 @@ export default function MyCardScreen() {
     `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-compact2.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
   
   const bankQrSize = Math.min(width * 0.62, 280);
-  const contactQrSize = Math.min(width * 0.45, 220);
-  const contactQrLogoSize = Math.max(34, contactQrSize * 0.24);
+  const contactQrSize = Math.min(width * 0.52, 260);
 
   useEffect(() => {
     setBankQrFailed(false);
@@ -438,7 +436,6 @@ export default function MyCardScreen() {
                   <ContactQrCode
                     value={vCardContent}
                     size={contactQrSize}
-                    logoSize={contactQrLogoSize}
                   />
                 </View>
                 <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
@@ -504,40 +501,16 @@ export default function MyCardScreen() {
   );
 }
 
-const ContactQrCode = ({ value, size, logoSize }) => {
-  const logoBoxSize = logoSize + 10;
-
+const ContactQrCode = ({ value, size }) => {
   return (
-    <View style={[styles.contactQrWrapper, { width: size, height: size }]}>
-      <QRCode value={value || 'MK eCard'} size={size} ecl="H" />
-      <View
-        pointerEvents="none"
-        style={[
-          styles.qrLogoBadge,
-          {
-            width: logoBoxSize,
-            height: logoBoxSize,
-            borderRadius: logoBoxSize * 0.22,
-            transform: [
-              { translateX: -logoBoxSize / 2 },
-              { translateY: -logoBoxSize / 2 }
-            ]
-          }
-        ]}
-      >
-        <Image
-          source={APP_LOGO}
-          style={[
-            styles.qrLogoImage,
-            {
-              width: logoSize,
-              height: logoSize,
-              borderRadius: logoSize * 0.16
-            }
-          ]}
-          resizeMode="contain"
-        />
-      </View>
+    <View style={[styles.contactQrWrapper, { width: size, height: size }]}> 
+      <QRCode
+        value={value || 'MK eCard'}
+        size={size}
+        ecl="M"
+        backgroundColor="#FFFFFF"
+        color="#000000"
+      />
     </View>
   );
 };
@@ -589,7 +562,7 @@ const styles = StyleSheet.create({
   qrSection: { alignItems: 'center', marginVertical: 10 },
   qrContainer: { padding: 12, backgroundColor: '#FFF', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   contactQrWrapper: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  qrLogoBadge: { position: 'absolute', left: '50%', top: '50%', zIndex: 2, elevation: 4, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  qrLogoBadge: { position: 'absolute', left: '50%', top: '50%', zIndex: 2, elevation: 4, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', opacity: 0.96 },
   qrLogoImage: { backgroundColor: '#FFF' },
   qrHint: { marginTop: 10, fontSize: 12, color: '#8E8E93', fontWeight: '600' },
   bankView: { alignItems: 'center', width: '100%' },
