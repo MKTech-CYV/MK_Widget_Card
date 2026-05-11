@@ -15,6 +15,8 @@
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		45BD1AD4311A35BECDCFD797 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 73EDA0D7EE665C14B6E54D72 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C0DEC0012FADCF00002410FC /* ContactSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0032FADCF00002410FC /* ContactSaver.swift */; };
+		C0DEC0022FADCF00002410FC /* ContactSaverBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0042FADCF00002410FC /* ContactSaverBridge.m */; };
 		E0291D7FBED4CC3C453FFCF0 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E171D927778B439707F80F06 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -56,6 +58,8 @@
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = MKeCard/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B882D2FC8CF01082C94045D6 /* Pods-MKeCard.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MKeCard.debug.xcconfig"; path = "Target Support Files/Pods-MKeCard/Pods-MKeCard.debug.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C0DEC0032FADCF00002410FC /* ContactSaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContactSaver.swift; path = MKeCard/ContactSaver.swift; sourceTree = "<group>"; };
+		C0DEC0042FADCF00002410FC /* ContactSaverBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ContactSaverBridge.m; path = MKeCard/ContactSaverBridge.m; sourceTree = "<group>"; };
 		E171D927778B439707F80F06 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-MKeCard/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		EA7A9D49B043023AF108B125 /* libPods-MKeCard.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-MKeCard.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -121,6 +125,8 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				C0DEC0032FADCF00002410FC /* ContactSaver.swift */,
+				C0DEC0042FADCF00002410FC /* ContactSaverBridge.m */,
 				F11748442D0722820044C1D9 /* MKeCard-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -472,6 +478,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				C0DEC0012FADCF00002410FC /* ContactSaver.swift in Sources */,
+				C0DEC0022FADCF00002410FC /* ContactSaverBridge.m in Sources */,
 				E0291D7FBED4CC3C453FFCF0 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -511,18 +519,18 @@
 				INFOPLIST_FILE = MKeCardWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MKeCardWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mktech.widgetcard.MKeCardWidget";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mktech.widgetcard.MKeCardWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -561,17 +569,17 @@
 				INFOPLIST_FILE = MKeCardWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MKeCardWidget;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.mktech.widgetcard.MKeCardWidget";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mktech.widgetcard.MKeCardWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

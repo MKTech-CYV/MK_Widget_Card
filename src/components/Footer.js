@@ -2,13 +2,17 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Heart } from 'lucide-react-native';
 import { useTheme, Spacing } from '../constants/Theme';
+import { useAppPreferences } from '../context/AppPreferencesContext';
+import { getTranslation } from '../constants/i18n';
 
 const Footer = () => {
   const { colors } = useTheme();
+  const { language } = useAppPreferences();
+  const t = (key) => getTranslation(language, key);
   return (
     <View style={styles.container}>
       <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-        © 2026 MKTech - Code Your Vision. Developed with
+        {t('footer.copyright')}
       </Text>
       <Heart color="#FF3B30" size={12} fill="#FF3B30" style={styles.heartIcon} />
     </View>

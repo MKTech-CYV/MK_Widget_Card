@@ -11,7 +11,9 @@ import {
   Image,
   Modal,
   FlatList,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  KeyboardAvoidingView
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,8 +22,11 @@ import { Edit2, Save, Camera, User as UserIcon, Landmark, ChevronDown, Check, Gl
 import { useTheme, Spacing } from '../constants/Theme';
 import { StorageService } from '../services/StorageService';
 import Footer from '../components/Footer';
+import { useAppPreferences } from '../context/AppPreferencesContext';
+import { getTranslation } from '../constants/i18n';
 
 const { width } = Dimensions.get('window');
+const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
 const APP_LOGO = require('../../assets/icon.png');
 
 const ALL_COUNTRIES = [
@@ -50,11 +55,35 @@ const normalizeCountryCode = (code) => {
   return digits || '84';
 };
 
-const formatInternationalPhone = (countryCode, phone) => `+${normalizeCountryCode(countryCode)}${phone || ''}`;
+const normalizePhoneForIOS = (phone, countryCode = '84') => {
+  const countryDigits = normalizeCountryCode(countryCode);
+  const withoutLeadingZero = `${phone || ''}`.replace(/[^\d]/g, '').replace(/^0+/, '');
+
+  if (withoutLeadingZero.startsWith(countryDigits) && withoutLeadingZero.length > countryDigits.length) {
+    return withoutLeadingZero.slice(countryDigits.length);
+  }
+
+  return withoutLeadingZero;
+};
+
+const normalizePhoneInput = (phone, countryCode) => (
+  Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : phone
+);
+
+const getPhoneForStorage = (phone, countryCode) => (
+  Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : `${phone || ''}`.trim()
+);
+
+const formatInternationalPhone = (countryCode, phone) => {
+  const localPhone = Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : phone || '';
+  return `+${normalizeCountryCode(countryCode)}${localPhone}`;
+};
 
 export default function MyCardScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { language } = useAppPreferences();
+  const t = (key) => getTranslation(language, key);
   const [userData, setUserData] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState('contact');
@@ -97,9 +126,11 @@ export default function MyCardScreen() {
     const data = await StorageService.getUserData();
     if (data) {
       setUserData(data);
+      const countryCode = data.countryCode ? normalizeCountryCode(data.countryCode) : '84';
       setFormData({
         ...data,
-        countryCode: data.countryCode ? data.countryCode.replace('+', '') : '84',
+        phone: normalizePhoneInput(data.phone || '', countryCode),
+        countryCode,
         bankName: data.bankName || 'MB',
         bankAccount: data.bankAccount || ''
       });
@@ -124,19 +155,20 @@ export default function MyCardScreen() {
       ...formData,
       fullName: formData.fullName.trim(),
       email: formData.email.trim(),
-      phone: formData.phone.trim(),
+      phone: getPhoneForStorage(formData.phone, formData.countryCode),
       title: formData.title.trim(),
       company: formData.company.trim(),
+      countryCode: normalizeCountryCode(formData.countryCode),
     };
-    if (!sanitizedData.fullName) return Alert.alert('Lỗi', 'Vui lòng nhập họ tên');
+    if (!sanitizedData.fullName) return Alert.alert(t('common.error'), t('myCard.nameRequired'));
     try {
       await StorageService.setUserData(sanitizedData);
       setUserData(sanitizedData);
       setFormData(sanitizedData);
       setIsEditing(false);
-      Alert.alert('Thành công', 'Thông tin đã được đồng bộ với Widget');
+      Alert.alert(t('common.success'), t('myCard.saveSuccess'));
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể lưu dữ liệu');
+      Alert.alert(t('common.error'), t('myCard.saveFailed'));
     }
   };
 
@@ -185,7 +217,7 @@ export default function MyCardScreen() {
             <Search color={colors.textSecondary} size={18} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
-              placeholder={type === 'bank' ? "Tìm kiếm ngân hàng..." : "Tìm kiếm quốc gia..."}
+              placeholder={type === 'bank' ? t('myCard.searchPlaceholderBank') : t('myCard.searchPlaceholderCountry')}
               placeholderTextColor={colors.textSecondary}
               value={searchQuery}
               onChangeText={setSearchBarQuery}
@@ -236,11 +268,18 @@ export default function MyCardScreen() {
   if (!userData || isEditing) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView 
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={keyboardVerticalOffset}
         >
-          <Text style={[styles.screenTitle, { color: colors.text }]}>{userData ? 'Chỉnh sửa' : 'Khởi tạo eCard'}</Text>
+          <ScrollView 
+            contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
+          >
+          <Text style={[styles.screenTitle, { color: colors.text }]}>{userData ? t('myCard.editTitle') : t('myCard.createTitle')}</Text>
           
           <View style={[styles.formCard, { backgroundColor: colors.card }]}>
             <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
@@ -256,12 +295,12 @@ export default function MyCardScreen() {
               </View>
             </TouchableOpacity>
 
-            <Text style={styles.sectionDivider}>THÔNG TIN CÁ NHÂN</Text>
+            <Text style={styles.sectionDivider}>{t('myCard.personalSection')}</Text>
             
-            <InputField label="Họ và Tên" value={formData.fullName} onChange={v => setFormData({...formData, fullName: v})} placeholder="Nguyễn Văn A" colors={colors} />
+            <InputField label={t('myCard.fullName')} value={formData.fullName} onChange={v => setFormData({...formData, fullName: v})} placeholder={t('myCard.fullNamePlaceholder')} colors={colors} />
             
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Số điện thoại</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('myCard.phone')}</Text>
               <View style={styles.phoneInputRow}>
                 <TouchableOpacity 
                   style={[styles.countrySelector, { backgroundColor: colors.background }]} 
@@ -273,22 +312,22 @@ export default function MyCardScreen() {
                 <TextInput 
                   style={[styles.input, { flex: 1, backgroundColor: colors.background, color: colors.text, marginLeft: 10 }]} 
                   value={formData.phone} 
-                  onChangeText={v => setFormData({...formData, phone: v})} 
-                  placeholder="0988xxxxxx" 
+                  onChangeText={v => setFormData({...formData, phone: normalizePhoneInput(v, formData.countryCode)})}
+                  placeholder={t('myCard.phonePlaceholder')} 
                   keyboardType="phone-pad"
                   placeholderTextColor={colors.textSecondary}
                 />
               </View>
             </View>
 
-            <InputField label="Email" value={formData.email} onChange={v => setFormData({...formData, email: v})} placeholder="email@example.com" colors={colors} />
-            <InputField label="Chức danh" value={formData.title} onChange={v => setFormData({...formData, title: v})} placeholder="Giám đốc" colors={colors} />
-            <InputField label="Công ty" value={formData.company} onChange={v => setFormData({...formData, company: v})} placeholder="MKTech" colors={colors} />
+            <InputField label={t('myCard.email')} value={formData.email} onChange={v => setFormData({...formData, email: v})} placeholder={t('myCard.emailPlaceholder')} colors={colors} />
+            <InputField label={t('myCard.titleField')} value={formData.title} onChange={v => setFormData({...formData, title: v})} placeholder={t('myCard.titlePlaceholder')} colors={colors} />
+            <InputField label={t('myCard.company')} value={formData.company} onChange={v => setFormData({...formData, company: v})} placeholder={t('myCard.companyPlaceholder')} colors={colors} />
 
-            <Text style={[styles.sectionDivider, { marginTop: 20 }]}>THÔNG TIN NGÂN HÀNG (VIETQR)</Text>
+            <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.bankSection')}</Text>
             
             <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Ngân hàng</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('myCard.bank')}</Text>
               <TouchableOpacity 
                 style={[styles.input, { backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
                 onPress={() => setShowBankModal(true)}
@@ -298,22 +337,23 @@ export default function MyCardScreen() {
               </TouchableOpacity>
             </View>
 
-            <InputField label="Số tài khoản" value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: v.replace(/[^\d]/g, '')})} placeholder="0335337802" keyboardType="numeric" colors={colors} />
+            <InputField label={t('myCard.account')} value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: v.replace(/[^\d]/g, '')})} placeholder={t('myCard.bankAccountPlaceholder')} keyboardType="numeric" colors={colors} />
 
             <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleSave}>
               <Save color="#fff" size={20} />
-              <Text style={styles.primaryButtonText}> Lưu & Đồng bộ Widget</Text>
+              <Text style={styles.primaryButtonText}>{t('myCard.saveAndSync')}</Text>
             </TouchableOpacity>
           </View>
           <Footer />
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         <SelectionModal 
           visible={showCountryModal} 
           onClose={() => { setShowCountryModal(false); setSearchBarQuery(''); }} 
           data={filteredCountries} 
           onSelect={code => setFormData({...formData, countryCode: code})}
-          title="Chọn mã vùng"
+          title={t('myCard.chooseCountry')}
           selectedId={formData.countryCode}
           type="country"
         />
@@ -322,7 +362,7 @@ export default function MyCardScreen() {
           onClose={() => { setShowBankModal(false); setSearchBarQuery(''); }} 
           data={filteredBanks} 
           onSelect={code => setFormData({...formData, bankName: code})}
-          title="Chọn ngân hàng"
+          title={t('myCard.chooseBank')}
           selectedId={formData.bankName}
           type="bank"
         />
@@ -332,11 +372,18 @@ export default function MyCardScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView 
-        contentContainerStyle={[styles.previewScroll, { paddingTop: insets.top + 20 }]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <Text style={[styles.screenTitle, { color: colors.text }]}>eCard của tôi</Text>
+        <ScrollView 
+          contentContainerStyle={[styles.previewScroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
+        <Text style={[styles.screenTitle, { color: colors.text }]}>{t('myCard.myCardTitle')}</Text>
         
         <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
           <TouchableOpacity 
@@ -344,14 +391,14 @@ export default function MyCardScreen() {
             onPress={() => setActiveTab('contact')}
           >
             <UserIcon color={activeTab === 'contact' ? '#fff' : colors.textSecondary} size={18} />
-            <Text style={[styles.tabText, { color: activeTab === 'contact' ? '#fff' : colors.textSecondary }]}>Liên hệ</Text>
+            <Text style={[styles.tabText, { color: activeTab === 'contact' ? '#fff' : colors.textSecondary }]}>{t('myCard.contactTab')}</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'bank' && { backgroundColor: colors.primary }]}
             onPress={() => setActiveTab('bank')}
           >
             <Landmark color={activeTab === 'bank' ? '#fff' : colors.textSecondary} size={18} />
-            <Text style={[styles.tabText, { color: activeTab === 'bank' ? '#fff' : colors.textSecondary }]}>Ngân hàng</Text>
+            <Text style={[styles.tabText, { color: activeTab === 'bank' ? '#fff' : colors.textSecondary }]}>{t('myCard.bankTab')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -381,7 +428,7 @@ export default function MyCardScreen() {
                     logoSize={contactQrLogoSize}
                   />
                 </View>
-                <Text style={styles.qrHint}>Quét mã để lưu danh bạ</Text>
+                <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
               </View>
             </>
           ) : (
@@ -391,7 +438,7 @@ export default function MyCardScreen() {
                   <Landmark color={colors.primary} size={16} />
                   <Text style={[styles.bankBadgeText, { color: colors.primary }]}>VIETQR</Text>
                 </View>
-                <Text style={[styles.bankTitle, { color: colors.text }]}>Thanh toán nhanh</Text>
+                <Text style={[styles.bankTitle, { color: colors.text }]}>{t('myCard.bankPaymentTitle')}</Text>
               </View>
 
               <View style={styles.qrSection}>
@@ -418,7 +465,7 @@ export default function MyCardScreen() {
                   ) : (
                     <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
                       <Landmark color={colors.textSecondary} size={34} />
-                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>Không tải được QR</Text>
+                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>{t('myCard.noBankQr')}</Text>
                     </View>
                   )}
                 </View>
@@ -435,10 +482,11 @@ export default function MyCardScreen() {
 
         <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
           <Edit2 color={colors.primary} size={20} />
-          <Text style={[styles.editButtonText, { color: colors.primary }]}> Chỉnh sửa thông tin</Text>
+          <Text style={[styles.editButtonText, { color: colors.primary }]}>{t('myCard.editButton')}</Text>
         </TouchableOpacity>
         <Footer />
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

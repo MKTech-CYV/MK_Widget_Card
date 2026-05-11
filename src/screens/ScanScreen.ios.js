@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, Modal, NativeModules } from 'react-native';
 import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { BadgeCheck, Briefcase, Building2, Image as ImageIcon, Mail, Phone, RefreshCw, Scan, User, UserPlus, X } from 'lucide-react-native';
 import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
+
+const { ContactSaver } = NativeModules;
 
 const emptyScanResult = {
   isVCard: false,
@@ -119,6 +121,11 @@ export default function ScanScreen() {
     setUploadingCard(false);
   };
 
+  const extractFileName = (uri = '') => {
+    const cleaned = uri.split('?')[0];
+    return cleaned.split('/').pop() || 'ecard';
+  };
+
   const handleUploadCard = async () => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -164,36 +171,25 @@ export default function ScanScreen() {
   const handleSaveContact = async () => {
     if (!scanResult?.isVCard || !scanResult.fullName) return;
 
+    if (!ContactSaver?.saveContact) {
+      Alert.alert(t('scan.cannotSaveTitle'), t('scan.cannotSaveDesc'));
+      return;
+    }
+
     setSavingContact(true);
 
     try {
-      // Dynamic import to avoid crashing when the native module
-      // isn't present in the current runtime (e.g. old dev client).
-      const Contacts = await import('expo-contacts');
-
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(t('scan.contactsPermissionTitle'), t('scan.contactsPermissionDesc'));
-        return;
-      }
-
-      const contact = {
-        [Contacts.Fields.FirstName]: scanResult.fullName,
-        [Contacts.Fields.PhoneNumbers]: scanResult.phone ? [{ label: 'mobile', number: scanResult.phone }] : [],
-        [Contacts.Fields.Emails]: scanResult.email ? [{ label: 'work', email: scanResult.email }] : [],
-        [Contacts.Fields.Company]: scanResult.company || '',
-        [Contacts.Fields.JobTitle]: scanResult.title || '',
-      };
-
-      await Contacts.addContactAsync(contact);
+      await ContactSaver.saveContact({
+        fullName: scanResult.fullName,
+        phone: scanResult.phone,
+        email: scanResult.email,
+        title: scanResult.title,
+        company: scanResult.company,
+      });
       setContactSaved(true);
     } catch (error) {
-      const message = `${error?.message || error || ''}`;
-      if (message.includes('Cannot find native module') || message.includes('ExpoContacts')) {
-        Alert.alert(
-          t('scan.cannotSaveTitle'),
-          'Contacts module is not available in this build. Please rebuild the app/dev client and try again.'
-        );
+      if (error?.code === 'contacts_permission_denied') {
+        Alert.alert(t('scan.contactsPermissionTitle'), t('scan.contactsPermissionDesc'));
       } else {
         Alert.alert(t('scan.cannotSaveTitle'), t('scan.saveFailedDesc'));
       }
@@ -207,10 +203,9 @@ export default function ScanScreen() {
       <CameraView
         style={StyleSheet.absoluteFillObject}
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       />
-      
-      {/* Scanner Overlay UI */}
+
       <View style={styles.overlay}>
         <View style={styles.topDim} />
         <View style={styles.middleRow}>
@@ -250,7 +245,6 @@ export default function ScanScreen() {
         isSaved={contactSaved}
         onSave={handleSaveContact}
         onClose={resetScan}
-        t={t}
       />
     </View>
   );
@@ -272,7 +266,7 @@ const DetailRow = ({ icon: Icon, label, value, colors }) => {
   );
 };
 
-const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, onClose, t }) => {
+const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, onClose }) => {
   if (!result) return null;
 
   const canSave = result.isVCard && Boolean(result.fullName) && !isSaved;
@@ -301,9 +295,7 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
           {result.isVCard ? (
             <>
               <View style={styles.nameBlock}>
-                <Text style={[styles.contactName, { color: colors.text }]} numberOfLines={2}>
-                  {result.fullName || t('scan.noName')}
-                </Text>
+                <Text style={[styles.contactName, { color: colors.text }]} numberOfLines={2}>{result.fullName || t('scan.noName')}</Text>
                 {!!(result.title || result.company) && (
                   <Text style={[styles.contactSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
                     {[result.title, result.company].filter(Boolean).join(' • ')}
@@ -379,7 +371,6 @@ const styles = StyleSheet.create({
   scanHint: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   uploadButton: { marginTop: 14, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   uploadButtonText: { marginLeft: 10, color: '#FFF', fontSize: 15, fontWeight: '800' },
-
   resultBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' },
   resultSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, paddingBottom: 28 },
   resultHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },

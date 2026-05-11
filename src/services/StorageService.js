@@ -24,5 +24,14 @@ export const StorageService = {
   getUserData: async () => {
     const data = await DefaultPreference.get('userData');
     return data ? JSON.parse(data) : null;
+  },
+
+  setAppPreferences: async (data) => {
+    await DefaultPreference.set('appPreferences', JSON.stringify(data));
+  },
+
+  getAppPreferences: async () => {
+    const data = await DefaultPreference.get('appPreferences');
+    return data ? JSON.parse(data) : null;
   }
 };

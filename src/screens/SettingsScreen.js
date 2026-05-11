@@ -1,68 +1,93 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { ChevronRight, ShieldCheck, Moon, Bell, Info, Sun, Monitor } from 'lucide-react-native';
+import React from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
+import { ChevronRight, ShieldCheck, Moon, Bell, Info, Sun, Monitor, Languages } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Spacing } from '../constants/Theme';
 import Footer from '../components/Footer';
+import { useAppPreferences } from '../context/AppPreferencesContext';
+import { getTranslation } from '../constants/i18n';
 
 export default function SettingsScreen({ navigation }) {
   const { colors, mode, setTheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const { language, setLanguage } = useAppPreferences();
+  const t = (key) => getTranslation(language, key);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}>
-        <Text style={[styles.screenTitle, { color: colors.text }]}>Cài đặt</Text>
+        <Text style={[styles.screenTitle, { color: colors.text }]}>{t('settings.title')}</Text>
 
         <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>CHẾ ĐỘ HIỂN THỊ</Text>
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.displayMode')}</Text>
           <View style={styles.themeSelector}>
             <ThemeOption 
               active={mode === 'light'} 
               icon={<Sun size={20} color={mode === 'light' ? '#fff' : colors.primary} />} 
-              label="Sáng" 
+              label={t('settings.light')} 
               onPress={() => setTheme('light')}
               colors={colors}
             />
             <ThemeOption 
               active={mode === 'dark'} 
               icon={<Moon size={20} color={mode === 'dark' ? '#fff' : colors.primary} />} 
-              label="Tối" 
+              label={t('settings.dark')} 
               onPress={() => setTheme('dark')}
               colors={colors}
             />
             <ThemeOption 
               active={mode === 'system'} 
               icon={<Monitor size={20} color={mode === 'system' ? '#fff' : colors.primary} />} 
-              label="Hệ thống" 
+              label={t('settings.system')} 
               onPress={() => setTheme('system')}
               colors={colors}
             />
           </View>
         </View>
 
+        <View style={[styles.section, { backgroundColor: colors.card }]}> 
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.languageSection')}</Text>
+          <Text style={[styles.languageNote, { color: colors.textSecondary }]}>{t('settings.languageNote')}</Text>
+          <View style={styles.languageSelector}>
+            <ThemeOption 
+              active={language === 'vi'} 
+              icon={<Languages size={20} color={language === 'vi' ? '#fff' : colors.primary} />} 
+              label={t('common.vietnamese')} 
+              onPress={() => setLanguage('vi')}
+              colors={colors}
+            />
+            <ThemeOption 
+              active={language === 'en'} 
+              icon={<Languages size={20} color={language === 'en' ? '#fff' : colors.primary} />} 
+              label={t('common.english')} 
+              onPress={() => setLanguage('en')}
+              colors={colors}
+            />
+          </View>
+        </View>
+
         <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>ỨNG DỤNG</Text>
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.appSection')}</Text>
           <SettingItem 
             icon={<Bell size={22} color="#FF9500" />} 
-            label="Thông báo" 
+            label={t('settings.notifications')} 
             onPress={() => {}}
             colors={colors}
           />
         </View>
 
         <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>PHÁP LÝ & HỖ TRỢ</Text>
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.legalSection')}</Text>
           <SettingItem 
             icon={<ShieldCheck size={22} color={colors.success} />} 
-            label="Điều khoản & Bảo mật" 
+            label={t('settings.terms')} 
             onPress={() => navigation.navigate('Terms')}
             colors={colors}
           />
           <SettingItem 
             icon={<Info size={22} color={colors.textSecondary} />} 
-            label="Phiên bản" 
-            right={<Text style={[styles.versionText, { color: colors.textSecondary }]}>1.0.0 (Build 2026)</Text>}
+            label={t('settings.versionLabel')} 
+            right={<Text style={[styles.versionText, { color: colors.textSecondary }]}>{getTranslation(language, 'about.appVersion')}</Text>}
             colors={colors}
           />
         </View>
@@ -91,21 +116,23 @@ const ThemeOption = ({ active, icon, label, onPress, colors }) => (
   </TouchableOpacity>
 );
 
-export function TermsScreen({ navigation }) {
+export function TermsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { language } = useAppPreferences();
+  const t = (key) => getTranslation(language, key);
   
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]} 
       contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 60 }]}
     >
-      <Text style={[styles.screenTitle, { color: colors.text }]}>Điều khoản</Text>
+      <Text style={[styles.screenTitle, { color: colors.text }]}>{t('terms.title')}</Text>
       <View style={[styles.termsCard, { backgroundColor: colors.card }]}>
         <ShieldCheck color={colors.success} size={40} style={{ alignSelf: 'center', marginBottom: 20 }} />
-        <TermBlock title="1. Thu thập dữ liệu" content="Dữ liệu cá nhân của bạn được lưu trữ hoàn toàn cục bộ trên thiết bị và trong App Group để phục vụ tính năng Widget. Chúng tôi không thu thập thông tin cá nhân." colors={colors} />
-        <TermBlock title="2. Sử dụng Camera" content="Camera chỉ được sử dụng để quét mã QR và trích xuất dữ liệu vCard. Không có hình ảnh nào được lưu trữ hay gửi đi." colors={colors} />
-        <TermBlock title="3. Quyền hạn" content="Người dùng có toàn quyền xóa bỏ dữ liệu của mình bằng cách gỡ cài đặt ứng dụng hoặc xóa thông tin trong mục My Card." colors={colors} />
+        <TermBlock title={t('terms.block1Title')} content={t('terms.block1Content')} colors={colors} />
+        <TermBlock title={t('terms.block2Title')} content={t('terms.block2Content')} colors={colors} />
+        <TermBlock title={t('terms.block3Title')} content={t('terms.block3Content')} colors={colors} />
       </View>
       <Footer />
     </ScrollView>
@@ -140,6 +167,8 @@ const styles = StyleSheet.create({
   section: { borderRadius: 24, marginBottom: Spacing.lg, overflow: 'hidden' },
   sectionHeader: { fontSize: 12, fontWeight: '700', marginLeft: Spacing.lg, marginBottom: Spacing.sm, marginTop: Spacing.md, textTransform: 'uppercase' },
   themeSelector: { flexDirection: 'row', padding: 10, justifyContent: 'space-between' },
+  languageSelector: { flexDirection: 'row', padding: 10, justifyContent: 'space-between' },
+  languageNote: { fontSize: 13, lineHeight: 18, paddingHorizontal: 18, marginBottom: 8 },
   themeOption: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, marginHorizontal: 5, borderRadius: 14 },
   themeOptionLabel: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   settingItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 18, borderBottomWidth: 0.5 },

@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.mktech.widgetcard",
       "infoPlist": {
-        "NSCameraUsageDescription": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp."
+        "NSCameraUsageDescription": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp.",
+        "NSContactsUsageDescription": "Cho phép MK Widget Card lưu eCard đã quét vào danh bạ của bạn."
       }
     },
     "plugins": [
@@ -47,6 +48,7 @@
       "eas": {
         "projectId": "fb9ff7c0-83bf-4f70-9970-5ef3bdff5300"
       }
-    }
+    },
+    "owner": "mktechvn"
   }
 }

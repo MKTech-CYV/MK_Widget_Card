@@ -4,6 +4,8 @@ import * as Icons from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Spacing } from '../constants/Theme';
 import Footer from '../components/Footer';
+import { useAppPreferences } from '../context/AppPreferencesContext';
+import { getTranslation } from '../constants/i18n';
 
 const { width } = Dimensions.get('window');
 const APP_LOGO = require('../../assets/icon.png');
@@ -31,10 +33,11 @@ const ContactLink = ({ icon: Icon, label, value, onPress, colors }) => (
 export default function AboutScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { language } = useAppPreferences();
+  const t = (key) => getTranslation(language, key);
   
   // Icons
   const Mail = Icons.Mail || Icons.Info || View;
-  const Github = Icons.Github || Icons.GitHub || Icons.Info || View;
   const Heart = Icons.Heart || Icons.Info || View;
   const Smartphone = Icons.Smartphone || Icons.Info || View;
   const Zap = Icons.Zap || Icons.Info || View;
@@ -55,51 +58,47 @@ export default function AboutScreen() {
       <View style={styles.headerRow}>
         <Image source={APP_LOGO} style={styles.miniLogo} />
         <View style={styles.headerText}>
-          <Text style={[styles.appName, { color: colors.text }]}>MK Widget Card</Text>
-          <Text style={[styles.appVersion, { color: colors.textSecondary }]}>v1.0.0 • 2026</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>{t('about.appName')}</Text>
+          <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{t('about.appVersion')}</Text>
         </View>
         <View style={styles.aiBadge}>
           <Cpu color={colors.success} size={12} />
-          <Text style={[styles.aiBadgeText, { color: colors.success }]}>100% AI</Text>
+          <Text style={[styles.aiBadgeText, { color: colors.success }]}>{t('about.aiBadge')}</Text>
         </View>
       </View>
 
       <View style={styles.introSection}>
-        <Text style={[styles.tagline, { color: colors.text }]}>
-          Cuộc cách mạng danh thiếp số.
-        </Text>
-        <Text style={[styles.description, { color: colors.textSecondary }]}>
-          <Text style={{ fontWeight: 'bold', color: colors.text }}>MK Widget Card</Text> là dự án đặc biệt được phát triển <Text style={{ fontWeight: 'bold', color: colors.primary }}>hoàn toàn bằng AI (100%)</Text>. Từ dòng mã Swift native cho Widget đến giao diện React Native, mọi thứ đều được tối ưu hóa để mang lại trải nghiệm kết nối đỉnh cao và bảo mật tuyệt đối.
-        </Text>
+        <Text style={[styles.tagline, { color: colors.text }]}>{t('about.tagline')}</Text>
+        <Text style={[styles.description, { color: colors.textSecondary }]}>{t('about.description')}</Text>
       </View>
 
       {/* Features Badges */}
       <View style={styles.featureRow}>
-        <FeatureItem icon={Smartphone} title="Widget" colors={colors} />
-        <FeatureItem icon={Zap} title="Quét QR" colors={colors} />
-        <FeatureItem icon={Shield} title="Bảo mật" colors={colors} />
+        <FeatureItem icon={Smartphone} title={t('about.featureWidget')} colors={colors} />
+        <FeatureItem icon={Zap} title={t('about.featureScan')} colors={colors} />
+        <FeatureItem icon={Shield} title={t('about.featureSecurity')} colors={colors} />
       </View>
 
       {/* Contact Developer Section */}
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Liên hệ Nhà phát triển</Text>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('about.contactTitle')}</Text>
       <View style={styles.contactContainer}>
         <ContactLink 
           icon={Globe} 
-          label="Website" 
+          label={t('about.website')} 
           value="tranminhkhoi.dev" 
           onPress={() => Linking.openURL('https://tranminhkhoi.dev')}
           colors={colors} 
         />
         <ContactLink 
           icon={Mail} 
-          label="Email" 
+          label={t('about.email')} 
           value="contact@tranminhkhoi.dev" 
           onPress={() => Linking.openURL('mailto:contact@tranminhkhoi.dev')}
           colors={colors} 
         />
         <ContactLink 
           icon={Phone} 
-          label="Hotline" 
+          label={t('about.hotline')} 
           value="0988 20 40 60" 
           onPress={() => Linking.openURL('tel:0988204060')}
           colors={colors} 
@@ -112,16 +111,14 @@ export default function AboutScreen() {
           <View style={styles.donateInfo}>
             <View style={styles.donateHeader}>
               <Heart color="#FF3B30" size={20} fill="#FF3B30" />
-              <Text style={[styles.donateTitle, { color: colors.text }]}>Donate</Text>
+              <Text style={[styles.donateTitle, { color: colors.text }]}>{t('about.donateTitle')}</Text>
             </View>
-            <Text style={[styles.donateDesc, { color: colors.textSecondary }]}>
-              Mời tôi một ly cà phê nếu bạn yêu thích dự án này!
-            </Text>
+            <Text style={[styles.donateDesc, { color: colors.textSecondary }]}>{t('about.donateDesc')}</Text>
             
             <View style={styles.bankDetails}>
-              <Text style={[styles.bankName, { color: colors.text }]}>MB Bank</Text>
+              <Text style={[styles.bankName, { color: colors.text }]}>{t('about.bankName')}</Text>
               <Text style={[styles.bankAccount, { color: colors.primary }]}>0335337802</Text>
-              <Text style={[styles.accountName, { color: colors.textSecondary }]}>TRAN MINH KHOI</Text>
+              <Text style={[styles.accountName, { color: colors.textSecondary }]}>{t('about.accountName')}</Text>
             </View>
           </View>
 

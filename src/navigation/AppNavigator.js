@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -9,6 +9,9 @@ import ScanScreen from '../screens/ScanScreen';
 import AboutScreen from '../screens/AboutScreen';
 import SettingsScreen, { TermsScreen } from '../screens/SettingsScreen';
 import { useTheme } from '../constants/Theme';
+import { useAppPreferences } from '../context/AppPreferencesContext';
+import { getTranslation } from '../constants/i18n';
+import QuickTourModal from '../components/QuickTourModal';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -46,33 +49,45 @@ const ScanTabIcon = ({ focused, colors, isDark }) => (
 
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
+  const { language, quickTourCompleted, isReady, completeQuickTour } = useAppPreferences();
+  const [showTour, setShowTour] = useState(false);
+  const t = (key) => getTranslation(language, key);
+
+  useEffect(() => {
+    if (isReady && !quickTourCompleted) {
+      setShowTour(true);
+    }
+  }, [isReady, quickTourCompleted]);
 
   return (
-    <Tab.Navigator
-      initialRouteName="My eCard"
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: [styles.tabBar, { backgroundColor: colors.card, borderTopColor: colors.border }],
-        tabBarLabelStyle: styles.tabBarLabel,
-        tabBarIcon: ({ color, size, focused }) => {
-          if (route.name === 'My eCard') return <User color={color} size={size} />;
-          if (route.name === 'Scan') return <ScanTabIcon focused={focused} colors={colors} isDark={isDark} />;
-          if (route.name === 'About') return <Info color={color} size={size} />;
-          if (route.name === 'Settings') return <Settings color={color} size={size} />;
-        },
-      })}
-    >
-      <Tab.Screen name="My eCard" component={MyCardScreen} />
-      <Tab.Screen 
-        name="Scan" 
-        component={ScanScreen} 
-        options={{ tabBarLabel: () => null }}
-      />
-      <Tab.Screen name="About" component={AboutScreen} />
-      <Tab.Screen name="Settings" component={SettingsStack} />
-    </Tab.Navigator>
+    <>
+      <Tab.Navigator
+        initialRouteName={t('nav.myCard')}
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textSecondary,
+          tabBarStyle: [styles.tabBar, { backgroundColor: colors.card, borderTopColor: colors.border }],
+          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarIcon: ({ color, size, focused }) => {
+            if (route.name === t('nav.myCard')) return <User color={color} size={size} />;
+            if (route.name === t('nav.scan')) return <ScanTabIcon focused={focused} colors={colors} isDark={isDark} />;
+            if (route.name === t('nav.about')) return <Info color={color} size={size} />;
+            if (route.name === t('nav.settings')) return <Settings color={color} size={size} />;
+          },
+        })}
+      >
+        <Tab.Screen name={t('nav.myCard')} component={MyCardScreen} />
+        <Tab.Screen 
+          name={t('nav.scan')} 
+          component={ScanScreen} 
+          options={{ tabBarLabel: () => null }}
+        />
+        <Tab.Screen name={t('nav.about')} component={AboutScreen} />
+        <Tab.Screen name={t('nav.settings')} component={SettingsStack} />
+      </Tab.Navigator>
+      <QuickTourModal visible={showTour} onFinish={async () => { setShowTour(false); await completeQuickTour(); }} />
+    </>
   );
 }
 

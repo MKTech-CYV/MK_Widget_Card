@@ -2,6 +2,14 @@ import WidgetKit
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 
+private enum WidgetColors {
+    static let background = Color.white
+    static let text = Color(red: 0.07, green: 0.09, blue: 0.15)
+    static let secondaryText = Color(red: 0.29, green: 0.33, blue: 0.39)
+    static let accent = Color(red: 0.0, green: 0.38, blue: 0.84)
+    static let divider = Color(red: 0.90, green: 0.93, blue: 0.96)
+}
+
 struct UserData: Codable {
     let fullName: String
     let phone: String
@@ -31,9 +39,15 @@ extension UserData {
         let digits = (countryCode ?? "84").filter { $0.isNumber }
         return digits.isEmpty ? "84" : digits
     }
+
+    var normalizedPhone: String {
+        let digits = phone.filter { $0.isNumber }
+        let withoutLeadingZero = digits.drop(while: { $0 == "0" })
+        return String(withoutLeadingZero)
+    }
     
     var formattedPhone: String {
-        "+\(normalizedCountryCode)\(phone)"
+        "+\(normalizedCountryCode)\(normalizedPhone)"
     }
     
     var vCard: String {
@@ -157,10 +171,15 @@ struct MKeCardWidgetBundle: WidgetBundle {
 struct ContactQRSmallView: View {
     var entry: SimpleEntry
     var body: some View {
-        ZStack {
-            QRWithLogo(content: entry.user.vCard, size: 155)
+        GeometryReader { geometry in
+            let qrSize = min(155, max(96, min(geometry.size.width, geometry.size.height) - 16))
+
+            ZStack {
+                QRWithLogo(content: entry.user.vCard, size: qrSize)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .containerBackground(.white, for: .widget)
+        .containerBackground(WidgetColors.background, for: .widget)
     }
 }
 
@@ -170,7 +189,7 @@ struct BankQRSmallView: View {
         ZStack {
             RemoteImage(url: entry.user.bankQrUrl, size: 155)
         }
-        .containerBackground(.white, for: .widget)
+        .containerBackground(WidgetColors.background, for: .widget)
     }
 }
 
@@ -179,23 +198,42 @@ struct ContactMediumView: View {
     var body: some View {
         let user = entry.user
         
-        HStack(spacing: 20) {
-            QRWithLogo(content: user.vCard, size: 110)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(user.fullName).font(.system(size: 15, weight: .bold)).foregroundColor(.primary)
-                Text(user.title).font(.system(size: 11)).foregroundColor(.secondary)
-                Text(user.company).font(.system(size: 11, weight: .semibold)).foregroundColor(.blue)
-                Divider().padding(.vertical, 4)
-                HStack(spacing: 4) {
-                    Image(systemName: "phone.fill").font(.system(size: 8))
-                    Text(user.formattedPhone).font(.system(size: 10))
-                }.foregroundColor(.secondary)
+        GeometryReader { geometry in
+            let qrSize = min(110, max(82, geometry.size.height - 26))
+
+            HStack(spacing: 18) {
+                QRWithLogo(content: user.vCard, size: qrSize)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(user.fullName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(WidgetColors.text)
+
+                    Text(user.title)
+                        .font(.system(size: 11))
+                        .foregroundColor(WidgetColors.secondaryText)
+
+                    Text(user.company)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(WidgetColors.accent)
+
+                    Rectangle()
+                        .fill(WidgetColors.divider)
+                        .frame(height: 1)
+                        .padding(.vertical, 4)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "phone.fill").font(.system(size: 8))
+                        Text(user.formattedPhone).font(.system(size: 10))
+                    }
+                    .foregroundColor(WidgetColors.secondaryText)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .padding(.horizontal, 15)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 15)
-        .containerBackground(.white, for: .widget)
+        .containerBackground(WidgetColors.background, for: .widget)
     }
 }
 
@@ -210,25 +248,25 @@ struct BankMediumView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("THANH TOÁN")
                     .font(.system(size: 10, weight: .black))
-                    .foregroundColor(.blue)
+                    .foregroundColor(WidgetColors.accent)
                     .padding(.bottom, 2)
                 
                 Text(user.fullName)
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(WidgetColors.text)
                 
                 Text(user.bankDisplayName)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(WidgetColors.secondaryText)
                 
                 Text(user.bankAccount ?? "")
                     .font(.system(size: 16, weight: .black))
-                    .foregroundColor(.primary)
+                    .foregroundColor(WidgetColors.text)
             }
             Spacer()
         }
         .padding(.horizontal, 15)
-        .containerBackground(.white, for: .widget)
+        .containerBackground(WidgetColors.background, for: .widget)
     }
 }
 
@@ -237,34 +275,67 @@ struct BankMediumView: View {
 struct QRWithLogo: View {
     let content: String
     let size: CGFloat
-    let filter = CIFilter.qrCodeGenerator()
-    let context = CIContext()
     
     var body: some View {
         ZStack {
             if let qrImage = generateQRCode(from: content) {
                 Image(uiImage: qrImage)
                     .interpolation(.none)
+                    .renderingMode(.original)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size, height: size)
-                
+
                 AppLogoBadge(logo: loadAppLogo(), size: size)
+            } else {
+                QRPlaceholder(size: size)
             }
         }
+        .frame(width: size, height: size)
+        .background(Color.white)
+        .widgetAccentable(false)
     }
     
     func generateQRCode(from string: String) -> UIImage? {
-        let data = Data(string.utf8)
-        filter.setValue(data, forKey: "inputMessage")
+        guard !string.isEmpty else { return nil }
+
+        let filter = CIFilter.qrCodeGenerator()
+        filter.setValue(Data(string.utf8), forKey: "inputMessage")
         filter.setValue("H", forKey: "inputCorrectionLevel")
-        if let outputImage = filter.outputImage {
-            let transformedImage = outputImage.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
-            if let cgImage = context.createCGImage(transformedImage, from: transformedImage.extent) {
-                return UIImage(cgImage: cgImage)
-            }
+
+        guard let outputImage = filter.outputImage else { return nil }
+
+        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let coloredImage = scaledImage.applyingFilter(
+            "CIFalseColor",
+            parameters: [
+                "inputColor0": CIColor(color: UIColor.black),
+                "inputColor1": CIColor(color: UIColor.white)
+            ]
+        )
+
+        let context = CIContext(options: [.workingColorSpace: CGColorSpaceCreateDeviceRGB()])
+        guard let cgImage = context.createCGImage(coloredImage, from: coloredImage.extent) else {
+            return nil
         }
-        return nil
+
+        return UIImage(cgImage: cgImage)
+    }
+}
+
+struct QRPlaceholder: View {
+    let size: CGFloat
+
+    var body: some View {
+        VStack(spacing: size * 0.04) {
+            Image(systemName: "qrcode")
+                .font(.system(size: size * 0.28, weight: .semibold))
+            Text("QR")
+                .font(.system(size: max(10, size * 0.11), weight: .black))
+        }
+        .foregroundColor(WidgetColors.secondaryText)
+        .frame(width: size, height: size)
+        .background(Color.white)
     }
 }
 
@@ -308,7 +379,7 @@ struct AppLogoBadge: View {
             } else {
                 Text("MK")
                     .font(.system(size: size * 0.11, weight: .black))
-                    .foregroundColor(.blue)
+                    .foregroundColor(WidgetColors.accent)
             }
         }
         .frame(width: badgeSize, height: badgeSize)
@@ -326,6 +397,7 @@ struct RemoteImage: View {
                let data = try? Data(contentsOf: urlObj),
                let image = UIImage(data: data) {
                 Image(uiImage: image)
+                    .renderingMode(.original)
                     .resizable()
                     .scaledToFit()
             } else {
