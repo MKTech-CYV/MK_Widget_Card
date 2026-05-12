@@ -17,8 +17,7 @@
       "bundleIdentifier": "com.mktech.widgetcard",
       "infoPlist": {
         "NSCameraUsageDescription": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp.",
-        "NSContactsUsageDescription": "Cho phép MK Widget Card lưu eCard đã quét vào danh bạ của bạn.",
-        "NSUserNotificationUsageDescription": "Cho phép MK Widget Card gửi thông báo đến bạn."
+        "NSContactsUsageDescription": "Cho phép MK Widget Card lưu eCard đã quét vào danh bạ của bạn."
       }
     },
     "plugins": [
@@ -27,8 +26,7 @@
         {
           "cameraPermission": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp."
         }
-      ],
-      "expo-notifications"
+      ]
     ],
     "android": {
       "package": "com.mktech.widgetcard",

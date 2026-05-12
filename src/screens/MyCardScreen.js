@@ -27,6 +27,7 @@ import { getTranslation } from '../constants/i18n';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
+const APP_LOGO = require('../../assets/icon.png');
 
 const ALL_COUNTRIES = [
   { code: '84', name: 'Việt Nam' }, { code: '1', name: 'United States' }, { code: '44', name: 'United Kingdom' },
@@ -198,6 +199,7 @@ export default function MyCardScreen() {
   
   const bankQrSize = Math.min(width * 0.62, 280);
   const contactQrSize = Math.min(width * 0.52, 260);
+  const contactQrLogoSize = Math.max(34, contactQrSize * 0.18);
 
   useEffect(() => {
     setBankQrFailed(false);
@@ -436,6 +438,7 @@ export default function MyCardScreen() {
                   <ContactQrCode
                     value={vCardContent}
                     size={contactQrSize}
+                    logoSize={contactQrLogoSize}
                   />
                 </View>
                 <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
@@ -501,16 +504,46 @@ export default function MyCardScreen() {
   );
 }
 
-const ContactQrCode = ({ value, size }) => {
+const ContactQrCode = ({ value, size, logoSize }) => {
+  const logoBoxSize = logoSize + 10;
+
   return (
-    <View style={[styles.contactQrWrapper, { width: size, height: size }]}> 
+    <View style={[styles.contactQrWrapper, { width: size, height: size }]}>
       <QRCode
         value={value || 'MK eCard'}
         size={size}
-        ecl="M"
+        ecl="Q"
         backgroundColor="#FFFFFF"
         color="#000000"
       />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.qrLogoBadge,
+          {
+            width: logoBoxSize,
+            height: logoBoxSize,
+            borderRadius: logoBoxSize * 0.22,
+            transform: [
+              { translateX: -logoBoxSize / 2 },
+              { translateY: -logoBoxSize / 2 }
+            ]
+          }
+        ]}
+      >
+        <Image
+          source={APP_LOGO}
+          style={[
+            styles.qrLogoImage,
+            {
+              width: logoSize,
+              height: logoSize,
+              borderRadius: logoSize * 0.16
+            }
+          ]}
+          resizeMode="contain"
+        />
+      </View>
     </View>
   );
 };

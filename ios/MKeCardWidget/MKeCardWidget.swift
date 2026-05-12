@@ -16,6 +16,8 @@ private let qrRenderContext = CIContext(options: [
     .outputColorSpace: CGColorSpaceCreateDeviceRGB()
 ])
 
+private final class WidgetBundleToken {}
+
 struct UserData: Codable {
     let fullName: String
     let phone: String
@@ -185,7 +187,7 @@ struct ContactQRSmallView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .containerBackground(WidgetColors.background, for: .widget)
+        .widgetBackgroundCompat(WidgetColors.background)
     }
 }
 
@@ -195,7 +197,7 @@ struct BankQRSmallView: View {
         ZStack {
             RemoteImage(url: entry.user.bankQrUrl, size: 155)
         }
-        .containerBackground(WidgetColors.background, for: .widget)
+        .widgetBackgroundCompat(WidgetColors.background)
     }
 }
 
@@ -239,7 +241,7 @@ struct ContactMediumView: View {
             .padding(.horizontal, 15)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .containerBackground(WidgetColors.background, for: .widget)
+        .widgetBackgroundCompat(WidgetColors.background)
     }
 }
 
@@ -272,7 +274,7 @@ struct BankMediumView: View {
             Spacer()
         }
         .padding(.horizontal, 15)
-        .containerBackground(WidgetColors.background, for: .widget)
+        .widgetBackgroundCompat(WidgetColors.background)
     }
 }
 
@@ -284,7 +286,7 @@ struct QRWithLogo: View {
     
     var body: some View {
         ZStack {
-            if let qrImage = generateQRCode(from: content, targetSize: size) {
+            if let qrImage = generateQRCode(from: content, targetSize: size, logo: loadAppLogo()) {
                 Image(uiImage: qrImage)
                     .interpolation(.none)
                     .renderingMode(.original)
@@ -297,15 +299,15 @@ struct QRWithLogo: View {
         }
         .frame(width: size, height: size)
         .background(Color.white)
-        .widgetAccentable(false)
+        .widgetAccentableCompat(false)
     }
     
-    func generateQRCode(from string: String, targetSize: CGFloat) -> UIImage? {
+    func generateQRCode(from string: String, targetSize: CGFloat, logo: UIImage?) -> UIImage? {
         guard !string.isEmpty else { return nil }
 
         let filter = CIFilter.qrCodeGenerator()
         filter.setValue(Data(string.utf8), forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
+        filter.setValue("Q", forKey: "inputCorrectionLevel")
 
         guard let outputImage = filter.outputImage else { return nil }
 
@@ -334,7 +336,70 @@ struct QRWithLogo: View {
             UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: imageExtent.size))
             UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: imageExtent.size))
+
+            let badgeSize = imageExtent.width * 0.22
+            let logoSize = imageExtent.width * 0.17
+            let badgeRect = CGRect(
+                x: (imageExtent.width - badgeSize) / 2,
+                y: (imageExtent.height - badgeSize) / 2,
+                width: badgeSize,
+                height: badgeSize
+            )
+            let logoRect = CGRect(
+                x: (imageExtent.width - logoSize) / 2,
+                y: (imageExtent.height - logoSize) / 2,
+                width: logoSize,
+                height: logoSize
+            )
+
+            let badgePath = UIBezierPath(
+                roundedRect: badgeRect,
+                cornerRadius: badgeSize * 0.22
+            )
+            UIColor.white.setFill()
+            badgePath.fill()
+
+            if let logo = logo {
+                context.cgContext.saveGState()
+                UIBezierPath(
+                    roundedRect: logoRect,
+                    cornerRadius: logoSize * 0.16
+                ).addClip()
+                logo.draw(in: logoRect)
+                context.cgContext.restoreGState()
+            } else {
+                let label = "MK" as NSString
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: imageExtent.width * 0.08, weight: .black),
+                    .foregroundColor: UIColor.systemBlue
+                ]
+                let labelSize = label.size(withAttributes: attributes)
+                label.draw(
+                    at: CGPoint(
+                        x: (imageExtent.width - labelSize.width) / 2,
+                        y: (imageExtent.height - labelSize.height) / 2
+                    ),
+                    withAttributes: attributes
+                )
+            }
         }
+    }
+
+    private func loadAppLogo() -> UIImage? {
+        let bundles = [Bundle.main, Bundle(for: WidgetBundleToken.self)]
+
+        for bundle in bundles {
+            if let logo = UIImage(named: "AppLogo", in: bundle, compatibleWith: nil) {
+                return logo
+            }
+
+            if let path = bundle.path(forResource: "AppLogo", ofType: "png"),
+               let logo = UIImage(contentsOfFile: path) {
+                return logo
+            }
+        }
+
+        return UIImage(named: "AppLogo")
     }
 }
 
@@ -351,6 +416,26 @@ struct QRPlaceholder: View {
         .foregroundColor(WidgetColors.secondaryText)
         .frame(width: size, height: size)
         .background(Color.white)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func widgetBackgroundCompat(_ color: Color) -> some View {
+        if #available(iOSApplicationExtension 17.0, *) {
+            self.containerBackground(color, for: .widget)
+        } else {
+            self.background(color)
+        }
+    }
+
+    @ViewBuilder
+    func widgetAccentableCompat(_ value: Bool) -> some View {
+        if #available(iOSApplicationExtension 16.0, *) {
+            self.widgetAccentable(value)
+        } else {
+            self
+        }
     }
 }
 
