@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
-import { ChevronRight, ShieldCheck, Moon, Bell, Info, Sun, Monitor, Languages } from 'lucide-react-native';
+import { ChevronRight, ShieldCheck, Moon, Bell, Info, Sun, Monitor, Languages, Landmark, User as UserIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Spacing } from '../constants/Theme';
 import Footer from '../components/Footer';
@@ -13,6 +13,13 @@ export default function SettingsScreen({ navigation }) {
   const { language, setLanguage } = useAppPreferences();
   const [changingLanguage, setChangingLanguage] = useState(null);
   const t = (key) => getTranslation(language, key);
+
+  const openMyCardEditor = (section) => {
+    navigation.getParent()?.navigate('MyCardTab', {
+      editSection: section,
+      editRequestId: Date.now(),
+    });
+  };
 
   const handleLanguageChange = async (nextLanguage) => {
     if (nextLanguage === language || changingLanguage) {
@@ -89,6 +96,18 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={[styles.section, { backgroundColor: colors.card }]}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.appSection')}</Text>
+          <SettingItem
+            icon={<UserIcon size={22} color={colors.primary} />}
+            label={t('settings.editECardInfo')}
+            onPress={() => openMyCardEditor('ecard')}
+            colors={colors}
+          />
+          <SettingItem
+            icon={<Landmark size={22} color="#34C759" />}
+            label={t('settings.editBankInfo')}
+            onPress={() => openMyCardEditor('bank')}
+            colors={colors}
+          />
           <SettingItem 
             icon={<Bell size={22} color="#FF9500" />} 
             label={t('settings.notifications')} 

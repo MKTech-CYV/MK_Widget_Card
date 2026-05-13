@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
-  Alert, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
   Dimensions,
   Image,
   Modal,
@@ -18,12 +18,35 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Edit2, Save, Camera, User as UserIcon, Landmark, ChevronDown, Check, Globe, Search, X } from 'lucide-react-native';
+import {
+  AtSign,
+  Camera,
+  Check,
+  ChevronDown,
+  Edit2,
+  Globe,
+  Landmark,
+  Link as LinkIcon,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Save,
+  Search,
+  User as UserIcon,
+  X
+} from 'lucide-react-native';
 import { useTheme, Spacing } from '../constants/Theme';
 import { StorageService } from '../services/StorageService';
 import Footer from '../components/Footer';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
+import {
+  buildVCard,
+  formatInternationalPhone,
+  normalizeCountryCode,
+  normalizePhoneForCountry
+} from '../utils/vcard';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
@@ -44,68 +67,135 @@ const ALL_COUNTRIES = [
   { code: '30', name: 'Greece' }, { code: '90', name: 'Turkey' }, { code: '971', name: 'UAE' },
 ].sort((a, b) => a.name.localeCompare(b.name));
 
-// Đảm bảo Việt Nam luôn ở đầu
 const SORTED_COUNTRIES = [
   { code: '84', name: 'Việt Nam' },
   ...ALL_COUNTRIES.filter(c => c.code !== '84' || c.name !== 'Việt Nam')
 ];
 
-const normalizeCountryCode = (code) => {
-  const digits = `${code || '84'}`.replace(/[^\d]/g, '');
-  return digits || '84';
+const DEFAULT_ECARD_FORM = {
+  fullName: '',
+  phone: '',
+  email: '',
+  title: '',
+  company: '',
+  department: '',
+  website: '',
+  address: '',
+  linkedin: '',
+  facebook: '',
+  zalo: '',
+  zaloCountryCode: '84',
+  whatsapp: '',
+  whatsappCountryCode: '84',
+  telegram: '',
+  bio: '',
+  avatar: null,
+  avatarUrl: '',
+  countryCode: '84'
 };
 
-const normalizePhoneForIOS = (phone, countryCode = '84') => {
-  const countryDigits = normalizeCountryCode(countryCode);
-  const withoutLeadingZero = `${phone || ''}`.replace(/[^\d]/g, '').replace(/^0+/, '');
-
-  if (withoutLeadingZero.startsWith(countryDigits) && withoutLeadingZero.length > countryDigits.length) {
-    return withoutLeadingZero.slice(countryDigits.length);
-  }
-
-  return withoutLeadingZero;
+const DEFAULT_BANK_FORM = {
+  bankName: 'MB',
+  bankAccount: ''
 };
+
+const trimText = (value) => `${value || ''}`.trim();
 
 const normalizePhoneInput = (phone, countryCode) => (
-  normalizePhoneForIOS(phone, countryCode)
+  normalizePhoneForCountry(phone, countryCode)
 );
 
-const getPhoneForStorage = (phone, countryCode) => (
-  normalizePhoneForIOS(phone, countryCode)
-);
+const toECardForm = (data = {}) => {
+  const countryCode = data.countryCode ? normalizeCountryCode(data.countryCode) : '84';
 
-const formatInternationalPhone = (countryCode, phone) => {
-  const localPhone = normalizePhoneForIOS(phone, countryCode);
-  return `+${normalizeCountryCode(countryCode)}${localPhone}`;
+  return {
+    ...DEFAULT_ECARD_FORM,
+    ...data,
+    phone: normalizePhoneInput(data.phone || '', countryCode),
+    countryCode,
+    avatar: data.avatar || null,
+    avatarUrl: data.avatarUrl || '',
+    zaloCountryCode: data.zaloCountryCode ? normalizeCountryCode(data.zaloCountryCode) : countryCode,
+    whatsappCountryCode: data.whatsappCountryCode ? normalizeCountryCode(data.whatsappCountryCode) : countryCode,
+    zalo: normalizePhoneInput(data.zalo || '', data.zaloCountryCode || countryCode),
+    whatsapp: normalizePhoneInput(data.whatsapp || '', data.whatsappCountryCode || countryCode)
+  };
 };
 
-export default function MyCardScreen() {
+const toBankForm = (data = {}) => ({
+  ...DEFAULT_BANK_FORM,
+  bankName: data.bankName || 'MB',
+  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, '')
+});
+
+const sanitizeECardForm = (data) => ({
+  ...data,
+  fullName: trimText(data.fullName),
+  phone: normalizePhoneInput(data.phone, data.countryCode),
+  email: trimText(data.email),
+  title: trimText(data.title),
+  company: trimText(data.company),
+  department: trimText(data.department),
+  website: trimText(data.website),
+  address: trimText(data.address),
+  linkedin: trimText(data.linkedin),
+  facebook: trimText(data.facebook),
+  zalo: normalizePhoneInput(data.zalo, data.zaloCountryCode || data.countryCode),
+  zaloCountryCode: normalizeCountryCode(data.zaloCountryCode || data.countryCode),
+  whatsapp: normalizePhoneInput(data.whatsapp, data.whatsappCountryCode || data.countryCode),
+  whatsappCountryCode: normalizeCountryCode(data.whatsappCountryCode || data.countryCode),
+  telegram: trimText(data.telegram),
+  bio: trimText(data.bio),
+  avatarUrl: trimText(data.avatarUrl),
+  countryCode: normalizeCountryCode(data.countryCode)
+});
+
+const sanitizeBankForm = (data) => ({
+  bankName: data.bankName || 'MB',
+  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, '')
+});
+
+const mergeStoredData = (currentData, ecardForm, bankForm) => ({
+  ...DEFAULT_ECARD_FORM,
+  ...DEFAULT_BANK_FORM,
+  ...(currentData || {}),
+  ...ecardForm,
+  ...bankForm
+});
+
+export default function MyCardScreen({ route }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
   const [userData, setUserData] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [editingSection, setEditingSection] = useState(null);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('contact');
   const [showCountryModal, setShowCountryModal] = useState(false);
+  const [countryPickerTarget, setCountryPickerTarget] = useState('phone');
   const [showBankModal, setShowBankModal] = useState(false);
   const [bankQrLoading, setBankQrLoading] = useState(false);
   const [bankQrFailed, setBankQrFailed] = useState(false);
-  
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [searchQuery, setSearchBarQuery] = useState('');
-  
-  const [formData, setFormData] = useState({
-    fullName: '', phone: '', email: '', title: '', company: '', avatar: null,
-    bankName: 'MB', bankAccount: '', countryCode: '84'
-  });
+  const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
+  const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
 
   useEffect(() => {
     StorageService.init();
     loadData();
     fetchBanks();
   }, []);
+
+  useEffect(() => {
+    const requestedSection = route?.params?.editSection;
+    if (requestedSection === 'ecard' || requestedSection === 'bank') {
+      setActiveTab(requestedSection === 'bank' ? 'bank' : 'contact');
+      setEditingSection(requestedSection);
+    }
+  }, [route?.params?.editSection, route?.params?.editRequestId]);
 
   const fetchBanks = async () => {
     setLoadingBanks(true);
@@ -125,15 +215,15 @@ export default function MyCardScreen() {
   const loadData = async () => {
     const data = await StorageService.getUserData();
     if (data) {
-      setUserData(data);
-      const countryCode = data.countryCode ? normalizeCountryCode(data.countryCode) : '84';
-      setFormData({
-        ...data,
-        phone: normalizePhoneInput(data.phone || '', countryCode),
-        countryCode,
-        bankName: data.bankName || 'MB',
-        bankAccount: data.bankAccount || ''
-      });
+      const nextECardForm = toECardForm(data);
+      const nextBankForm = toBankForm(data);
+      const normalizedData = mergeStoredData(data, nextECardForm, nextBankForm);
+
+      setUserData(normalizedData);
+      setECardForm(nextECardForm);
+      setBankForm(nextBankForm);
+    } else {
+      setEditingSection('ecard');
     }
   };
 
@@ -155,66 +245,253 @@ export default function MyCardScreen() {
 
     if (!result.canceled && result.assets?.length) {
       const asset = result.assets[0];
-      if (asset.base64) {
-        setFormData({ ...formData, avatar: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}` });
-      } else if (asset.uri) {
-        setFormData({ ...formData, avatar: asset.uri });
-      }
+      const avatar = asset.base64
+        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+        : asset.uri;
+
+      setECardForm(current => ({ ...current, avatar }));
     }
   };
 
-  const handleSave = async () => {
-    const sanitizedData = {
-      ...formData,
-      fullName: formData.fullName.trim(),
-      email: formData.email.trim(),
-      phone: getPhoneForStorage(formData.phone, formData.countryCode),
-      title: formData.title.trim(),
-      company: formData.company.trim(),
-      countryCode: normalizeCountryCode(formData.countryCode),
-    };
-    if (!sanitizedData.fullName) return Alert.alert(t('common.error'), t('myCard.nameRequired'));
+  const persistData = async (nextData, successMessage = t('myCard.saveSuccess')) => {
     try {
-      await StorageService.setUserData(sanitizedData);
-      setUserData(sanitizedData);
-      setFormData(sanitizedData);
-      setIsEditing(false);
-      Alert.alert(t('common.success'), t('myCard.saveSuccess'));
+      await StorageService.setUserData(nextData);
+      setUserData(nextData);
+      setECardForm(toECardForm(nextData));
+      setBankForm(toBankForm(nextData));
+      setEditingSection(null);
+      Alert.alert(t('common.success'), successMessage);
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.saveFailed'));
     }
   };
 
-  const vCardContent = userData ? 
-    `BEGIN:VCARD\nVERSION:3.0\nFN:${userData.fullName}\nTEL:${formatInternationalPhone(userData.countryCode, userData.phone)}\nEMAIL:${userData.email}\nORG:${userData.company}\nTITLE:${userData.title}\nEND:VCARD` 
-    : '';
+  const handleSaveECard = async () => {
+    const sanitizedECard = sanitizeECardForm(ecardForm);
+    if (!sanitizedECard.fullName) {
+      Alert.alert(t('common.error'), t('myCard.nameRequired'));
+      return;
+    }
+
+    const sanitizedBank = sanitizeBankForm(bankForm);
+    const nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
+    await persistData(nextData, t('myCard.ecardSaveSuccess'));
+  };
+
+  const handleSaveBank = async () => {
+    const sanitizedECard = sanitizeECardForm(ecardForm);
+    const sanitizedBank = sanitizeBankForm(bankForm);
+    const nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
+    await persistData(nextData, t('myCard.bankSaveSuccess'));
+  };
 
   const getBankName = (code) => {
     const bank = banks.find(b => b.code === code);
     return bank ? bank.shortName || bank.name : code;
   };
 
-  const bankQrUrl = userData?.bankName && userData?.bankAccount ? 
-    `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
-  
+  const bankQrUrl = userData?.bankName && userData?.bankAccount
+    ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.fullName || '')}`
+    : null;
+
+  const vCardContent = userData ? buildVCard(userData) : '';
   const bankQrSize = Math.min(width * 0.62, 280);
-  const contactQrSize = Math.min(width * 0.52, 260);
-  const contactQrLogoSize = Math.max(34, contactQrSize * 0.18);
+  const contactQrSize = Math.min(width * 0.58, 280);
+  const contactQrLogoSize = Math.max(32, contactQrSize * 0.16);
+  const isFormMode = Boolean(editingSection) || !userData;
 
   useEffect(() => {
     setBankQrFailed(false);
     setBankQrLoading(Boolean(bankQrUrl));
   }, [bankQrUrl]);
 
-  const filteredBanks = banks.filter(bank => 
-    bank.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    bank.shortName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    bank.code.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredBanks = banks.filter(bank => (
+    `${bank.name || ''}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    `${bank.shortName || ''}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    `${bank.code || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
+  ));
+
+  const filteredCountries = SORTED_COUNTRIES.filter(country => (
+    country.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    country.code.includes(searchQuery)
+  ));
+
+  const openCountryPicker = (target) => {
+    setCountryPickerTarget(target);
+    setShowCountryModal(true);
+  };
+
+  const handleCountrySelect = (code) => {
+    const countryCode = normalizeCountryCode(code);
+    setECardForm(current => {
+      if (countryPickerTarget === 'zalo') {
+        return {
+          ...current,
+          zaloCountryCode: countryCode,
+          zalo: normalizePhoneInput(current.zalo, countryCode)
+        };
+      }
+
+      if (countryPickerTarget === 'whatsapp') {
+        return {
+          ...current,
+          whatsappCountryCode: countryCode,
+          whatsapp: normalizePhoneInput(current.whatsapp, countryCode)
+        };
+      }
+
+      return {
+        ...current,
+        countryCode,
+        phone: normalizePhoneInput(current.phone, countryCode)
+      };
+    });
+  };
+
+  const selectedCountryCode = countryPickerTarget === 'zalo'
+    ? ecardForm.zaloCountryCode
+    : countryPickerTarget === 'whatsapp'
+      ? ecardForm.whatsappCountryCode
+      : ecardForm.countryCode;
+
+  const renderPhoneInput = ({ label, value, countryCode, target, placeholder, onChange }) => (
+    <View style={styles.inputContainer}>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
+      <View style={styles.phoneInputRow}>
+        <TouchableOpacity
+          style={[styles.countrySelector, { backgroundColor: colors.background }]}
+          onPress={() => openCountryPicker(target)}
+        >
+          <Text style={{ color: colors.text, fontWeight: '700' }}>+{countryCode}</Text>
+          <ChevronDown color={colors.textSecondary} size={14} style={{ marginLeft: 5 }} />
+        </TouchableOpacity>
+        <TextInput
+          style={[styles.input, { flex: 1, backgroundColor: colors.background, color: colors.text, marginLeft: 10 }]}
+          value={value}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          keyboardType="phone-pad"
+          placeholderTextColor={colors.textSecondary}
+        />
+      </View>
+    </View>
   );
 
-  const filteredCountries = SORTED_COUNTRIES.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.code.includes(searchQuery)
+  const renderFormTabs = () => (
+    <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
+      <TouchableOpacity
+        style={[styles.tab, editingSection === 'ecard' && { backgroundColor: colors.primary }]}
+        onPress={() => setEditingSection('ecard')}
+      >
+        <UserIcon color={editingSection === 'ecard' ? '#fff' : colors.textSecondary} size={18} />
+        <Text style={[styles.tabText, { color: editingSection === 'ecard' ? '#fff' : colors.textSecondary }]}>
+          {t('myCard.ecardEditTab')}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.tab, editingSection === 'bank' && { backgroundColor: colors.primary }]}
+        onPress={() => setEditingSection('bank')}
+      >
+        <Landmark color={editingSection === 'bank' ? '#fff' : colors.textSecondary} size={18} />
+        <Text style={[styles.tabText, { color: editingSection === 'bank' ? '#fff' : colors.textSecondary }]}>
+          {t('myCard.bankEditTab')}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderECardForm = () => (
+    <View style={[styles.formCard, { backgroundColor: colors.card }]}>
+      <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
+        {ecardForm.avatar ? (
+          <Image source={{ uri: ecardForm.avatar }} style={styles.avatarImage} />
+        ) : (
+          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.background }]}>
+            <Camera color={colors.textSecondary} size={30} />
+          </View>
+        )}
+        <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
+          <Camera color="#fff" size={14} />
+        </View>
+      </TouchableOpacity>
+
+      <Text style={styles.sectionDivider}>{t('myCard.personalSection')}</Text>
+
+      <InputField label={t('myCard.fullName')} value={ecardForm.fullName} onChange={v => setECardForm({ ...ecardForm, fullName: v })} placeholder={t('myCard.fullNamePlaceholder')} colors={colors} />
+
+      {renderPhoneInput({
+        label: t('myCard.phone'),
+        value: ecardForm.phone,
+        countryCode: ecardForm.countryCode,
+        target: 'phone',
+        placeholder: t('myCard.phonePlaceholder'),
+        onChange: v => setECardForm({ ...ecardForm, phone: normalizePhoneInput(v, ecardForm.countryCode) })
+      })}
+
+      <InputField label={t('myCard.email')} value={ecardForm.email} onChange={v => setECardForm({ ...ecardForm, email: v })} placeholder={t('myCard.emailPlaceholder')} keyboardType="email-address" autoCapitalize="none" colors={colors} />
+      <InputField label={t('myCard.titleField')} value={ecardForm.title} onChange={v => setECardForm({ ...ecardForm, title: v })} placeholder={t('myCard.titlePlaceholder')} colors={colors} />
+      <InputField label={t('myCard.company')} value={ecardForm.company} onChange={v => setECardForm({ ...ecardForm, company: v })} placeholder={t('myCard.companyPlaceholder')} colors={colors} />
+      <InputField label={t('myCard.department')} value={ecardForm.department} onChange={v => setECardForm({ ...ecardForm, department: v })} placeholder={t('myCard.departmentPlaceholder')} colors={colors} />
+
+      <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.contactSection')}</Text>
+      <InputField label={t('myCard.website')} value={ecardForm.website} onChange={v => setECardForm({ ...ecardForm, website: v })} placeholder={t('myCard.websitePlaceholder')} keyboardType="url" autoCapitalize="none" colors={colors} />
+      <InputField label={t('myCard.address')} value={ecardForm.address} onChange={v => setECardForm({ ...ecardForm, address: v })} placeholder={t('myCard.addressPlaceholder')} colors={colors} multiline />
+      <InputField label={t('myCard.avatarUrl')} value={ecardForm.avatarUrl} onChange={v => setECardForm({ ...ecardForm, avatarUrl: v })} placeholder={t('myCard.avatarUrlPlaceholder')} keyboardType="url" autoCapitalize="none" colors={colors} />
+
+      <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.socialSection')}</Text>
+      <InputField label={t('myCard.linkedin')} value={ecardForm.linkedin} onChange={v => setECardForm({ ...ecardForm, linkedin: v })} placeholder={t('myCard.linkedinPlaceholder')} autoCapitalize="none" colors={colors} />
+      <InputField label={t('myCard.facebook')} value={ecardForm.facebook} onChange={v => setECardForm({ ...ecardForm, facebook: v })} placeholder={t('myCard.facebookPlaceholder')} autoCapitalize="none" colors={colors} />
+      {renderPhoneInput({
+        label: t('myCard.zalo'),
+        value: ecardForm.zalo,
+        countryCode: ecardForm.zaloCountryCode,
+        target: 'zalo',
+        placeholder: t('myCard.zaloPlaceholder'),
+        onChange: v => setECardForm({ ...ecardForm, zalo: normalizePhoneInput(v, ecardForm.zaloCountryCode) })
+      })}
+      {renderPhoneInput({
+        label: t('myCard.whatsapp'),
+        value: ecardForm.whatsapp,
+        countryCode: ecardForm.whatsappCountryCode,
+        target: 'whatsapp',
+        placeholder: t('myCard.whatsappPlaceholder'),
+        onChange: v => setECardForm({ ...ecardForm, whatsapp: normalizePhoneInput(v, ecardForm.whatsappCountryCode) })
+      })}
+      <InputField label={t('myCard.telegram')} value={ecardForm.telegram} onChange={v => setECardForm({ ...ecardForm, telegram: v })} placeholder={t('myCard.telegramPlaceholder')} autoCapitalize="none" colors={colors} />
+      <InputField label={t('myCard.bio')} value={ecardForm.bio} onChange={v => setECardForm({ ...ecardForm, bio: v })} placeholder={t('myCard.bioPlaceholder')} colors={colors} multiline />
+
+    </View>
+  );
+
+  const renderBankForm = () => (
+    <View style={[styles.formCard, { backgroundColor: colors.card }]}>
+      <View style={[styles.formIconHeader, { backgroundColor: `${colors.primary}14` }]}>
+        <Landmark color={colors.primary} size={26} />
+      </View>
+
+      <Text style={styles.sectionDivider}>{t('myCard.bankSection')}</Text>
+
+      <View style={styles.inputContainer}>
+        <Text style={[styles.label, { color: colors.textSecondary }]}>{t('myCard.bank')}</Text>
+        <TouchableOpacity
+          style={[styles.input, { backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+          onPress={() => setShowBankModal(true)}
+        >
+          <Text style={{ color: colors.text, fontSize: 16 }}>{getBankName(bankForm.bankName)}</Text>
+          <ChevronDown color={colors.textSecondary} size={20} />
+        </TouchableOpacity>
+      </View>
+
+      <InputField
+        label={t('myCard.account')}
+        value={bankForm.bankAccount}
+        onChange={v => setBankForm({ ...bankForm, bankAccount: v.replace(/[^\d]/g, '') })}
+        placeholder={t('myCard.bankAccountPlaceholder')}
+        keyboardType="numeric"
+        colors={colors}
+      />
+
+    </View>
   );
 
   const SelectionModal = ({ visible, onClose, data, onSelect, title, selectedId, type }) => (
@@ -225,7 +502,7 @@ export default function MyCardScreen() {
             <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
             <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
           </View>
-          
+
           <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
             <Search color={colors.textSecondary} size={18} />
             <TextInput
@@ -248,14 +525,14 @@ export default function MyCardScreen() {
                 const id = item.code;
                 const isSelected = selectedId === id;
                 return (
-                  <TouchableOpacity 
-                    style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]} 
+                  <TouchableOpacity
+                    style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]}
                     onPress={() => { onSelect(id); onClose(); setSearchBarQuery(''); }}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                       {type === 'country' ? (
                         <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
-                           <Globe size={18} color={colors.primary} />
+                          <Globe size={18} color={colors.primary} />
                         </View>
                       ) : (
                         <Image source={{ uri: item.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
@@ -278,7 +555,15 @@ export default function MyCardScreen() {
     </Modal>
   );
 
-  if (!userData || isEditing) {
+  if (isFormMode) {
+    const saveLabel = editingSection === 'bank' ? t('myCard.saveBank') : t('myCard.saveECard');
+    const onSave = editingSection === 'bank' ? handleSaveBank : handleSaveECard;
+    const confirmMessage = editingSection === 'bank' ? t('myCard.confirmSaveBank') : t('myCard.confirmSaveECard');
+    const closeEdit = () => {
+      setShowSaveConfirm(false);
+      setEditingSection(null);
+    };
+
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <KeyboardAvoidingView
@@ -286,97 +571,78 @@ export default function MyCardScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={keyboardVerticalOffset}
         >
-          <ScrollView 
-            contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
+          <View style={[styles.stickyEditHeader, { paddingTop: insets.top + 12, backgroundColor: colors.background }]}>
+            <View style={styles.formTitleRow}>
+              <Text style={[styles.screenTitle, styles.editScreenTitle, { color: colors.text }]}>
+                {userData ? (editingSection === 'bank' ? t('myCard.editBankTitle') : t('myCard.editECardTitle')) : t('myCard.createTitle')}
+              </Text>
+              {userData && (
+                <TouchableOpacity style={[styles.cancelPill, { backgroundColor: colors.card }]} onPress={closeEdit}>
+                  <X color={colors.textSecondary} size={18} />
+                  <Text style={[styles.cancelPillText, { color: colors.textSecondary }]}>{t('common.cancel')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {renderFormTabs()}
+          </View>
+
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, { paddingTop: Spacing.md, paddingBottom: insets.bottom + 104 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
           >
-          <Text style={[styles.screenTitle, { color: colors.text }]}>{userData ? t('myCard.editTitle') : t('myCard.createTitle')}</Text>
-          
-          <View style={[styles.formCard, { backgroundColor: colors.card }]}>
-            <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
-              {formData.avatar ? (
-                <Image source={{ uri: formData.avatar }} style={styles.avatarImage} />
-              ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.background }]}>
-                  <Camera color={colors.textSecondary} size={30} />
-                </View>
-              )}
-              <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-                <Camera color="#fff" size={14} />
-              </View>
-            </TouchableOpacity>
-
-            <Text style={styles.sectionDivider}>{t('myCard.personalSection')}</Text>
-            
-            <InputField label={t('myCard.fullName')} value={formData.fullName} onChange={v => setFormData({...formData, fullName: v})} placeholder={t('myCard.fullNamePlaceholder')} colors={colors} />
-            
-            <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('myCard.phone')}</Text>
-              <View style={styles.phoneInputRow}>
-                <TouchableOpacity 
-                  style={[styles.countrySelector, { backgroundColor: colors.background }]} 
-                  onPress={() => setShowCountryModal(true)}
-                >
-                  <Text style={{ color: colors.text, fontWeight: '700' }}>+{formData.countryCode}</Text>
-                  <ChevronDown color={colors.textSecondary} size={14} style={{ marginLeft: 5 }} />
-                </TouchableOpacity>
-                <TextInput 
-                  style={[styles.input, { flex: 1, backgroundColor: colors.background, color: colors.text, marginLeft: 10 }]} 
-                  value={formData.phone} 
-                  onChangeText={v => setFormData({...formData, phone: normalizePhoneInput(v, formData.countryCode)})}
-                  placeholder={t('myCard.phonePlaceholder')} 
-                  keyboardType="phone-pad"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-            </View>
-
-            <InputField label={t('myCard.email')} value={formData.email} onChange={v => setFormData({...formData, email: v})} placeholder={t('myCard.emailPlaceholder')} colors={colors} />
-            <InputField label={t('myCard.titleField')} value={formData.title} onChange={v => setFormData({...formData, title: v})} placeholder={t('myCard.titlePlaceholder')} colors={colors} />
-            <InputField label={t('myCard.company')} value={formData.company} onChange={v => setFormData({...formData, company: v})} placeholder={t('myCard.companyPlaceholder')} colors={colors} />
-
-            <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.bankSection')}</Text>
-            
-            <View style={styles.inputContainer}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('myCard.bank')}</Text>
-              <TouchableOpacity 
-                style={[styles.input, { backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
-                onPress={() => setShowBankModal(true)}
-              >
-                <Text style={{ color: colors.text, fontSize: 16 }}>{getBankName(formData.bankName)}</Text>
-                <ChevronDown color={colors.textSecondary} size={20} />
-              </TouchableOpacity>
-            </View>
-
-            <InputField label={t('myCard.account')} value={formData.bankAccount} onChange={v => setFormData({...formData, bankAccount: v.replace(/[^\d]/g, '')})} placeholder={t('myCard.bankAccountPlaceholder')} keyboardType="numeric" colors={colors} />
-
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleSave}>
-              <Save color="#fff" size={20} />
-              <Text style={styles.primaryButtonText}>{t('myCard.saveAndSync')}</Text>
-            </TouchableOpacity>
-          </View>
-          <Footer />
+            {editingSection === 'bank' ? renderBankForm() : renderECardForm()}
+            <Footer />
           </ScrollView>
+
+          <TouchableOpacity
+            style={[
+              styles.saveFab,
+              {
+                right: Spacing.lg,
+                bottom: insets.bottom + 22,
+                backgroundColor: colors.primary
+              }
+            ]}
+            onPress={() => setShowSaveConfirm(true)}
+            accessibilityRole="button"
+            accessibilityLabel={saveLabel}
+          >
+            <Save color="#fff" size={25} />
+          </TouchableOpacity>
         </KeyboardAvoidingView>
 
-        <SelectionModal 
-          visible={showCountryModal} 
-          onClose={() => { setShowCountryModal(false); setSearchBarQuery(''); }} 
-          data={filteredCountries} 
-          onSelect={code => setFormData({...formData, countryCode: code})}
+        <SaveConfirmModal
+          visible={showSaveConfirm}
+          title={t('myCard.confirmSaveTitle')}
+          message={confirmMessage}
+          confirmLabel={saveLabel}
+          cancelLabel={t('common.cancel')}
+          colors={colors}
+          onCancel={() => setShowSaveConfirm(false)}
+          onConfirm={() => {
+            setShowSaveConfirm(false);
+            onSave();
+          }}
+        />
+        <SelectionModal
+          visible={showCountryModal}
+          onClose={() => { setShowCountryModal(false); setSearchBarQuery(''); }}
+          data={filteredCountries}
+          onSelect={handleCountrySelect}
           title={t('myCard.chooseCountry')}
-          selectedId={formData.countryCode}
+          selectedId={selectedCountryCode}
           type="country"
         />
-        <SelectionModal 
-          visible={showBankModal} 
-          onClose={() => { setShowBankModal(false); setSearchBarQuery(''); }} 
-          data={filteredBanks} 
-          onSelect={code => setFormData({...formData, bankName: code})}
+        <SelectionModal
+          visible={showBankModal}
+          onClose={() => { setShowBankModal(false); setSearchBarQuery(''); }}
+          data={filteredBanks}
+          onSelect={code => setBankForm({ ...bankForm, bankName: code })}
           title={t('myCard.chooseBank')}
-          selectedId={formData.bankName}
+          selectedId={bankForm.bankName}
           type="bank"
         />
       </View>
@@ -390,114 +656,134 @@ export default function MyCardScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={[styles.previewScroll, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
         >
-        <Text style={[styles.screenTitle, { color: colors.text }]}>{t('myCard.myCardTitle')}</Text>
-        
-        <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'contact' && { backgroundColor: colors.primary }]}
-            onPress={() => setActiveTab('contact')}
-          >
-            <UserIcon color={activeTab === 'contact' ? '#fff' : colors.textSecondary} size={18} />
-            <Text style={[styles.tabText, { color: activeTab === 'contact' ? '#fff' : colors.textSecondary }]}>{t('myCard.contactTab')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'bank' && { backgroundColor: colors.primary }]}
-            onPress={() => setActiveTab('bank')}
-          >
-            <Landmark color={activeTab === 'bank' ? '#fff' : colors.textSecondary} size={18} />
-            <Text style={[styles.tabText, { color: activeTab === 'bank' ? '#fff' : colors.textSecondary }]}>{t('myCard.bankTab')}</Text>
-          </TouchableOpacity>
-        </View>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>{t('myCard.myCardTitle')}</Text>
 
-        <View style={[styles.digitalCard, { backgroundColor: colors.card }]}>
-          {activeTab === 'contact' ? (
-            <>
-              <View style={styles.cardHeader}>
-                {userData.avatar ? (
-                  <Image source={{ uri: userData.avatar }} style={styles.cardAvatar} />
-                ) : (
-                  <View style={[styles.cardAvatarPlaceholder, { backgroundColor: colors.background }]}>
-                    <UserIcon color={colors.primary} size={40} />
-                  </View>
-                )}
-                <View style={styles.headerInfo}>
-                  <Text style={[styles.cardName, { color: colors.text }]}>{userData.fullName}</Text>
-                  <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>{userData.title}</Text>
-                  <Text style={[styles.cardCompany, { color: colors.primary }]}>{userData.company}</Text>
-                </View>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.qrSection}>
-                <View style={styles.qrContainer}>
-                  <ContactQrCode
-                    value={vCardContent}
-                    size={contactQrSize}
-                    logoSize={contactQrLogoSize}
-                  />
-                </View>
-                <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.bankView}>
-              <View style={styles.bankHeader}>
-                <View style={[styles.bankBadge, { backgroundColor: `${colors.primary}14` }]}>
-                  <Landmark color={colors.primary} size={16} />
-                  <Text style={[styles.bankBadgeText, { color: colors.primary }]}>VIETQR</Text>
-                </View>
-                <Text style={[styles.bankTitle, { color: colors.text }]}>{t('myCard.bankPaymentTitle')}</Text>
-              </View>
+          <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'contact' && { backgroundColor: colors.primary }]}
+              onPress={() => setActiveTab('contact')}
+            >
+              <UserIcon color={activeTab === 'contact' ? '#fff' : colors.textSecondary} size={18} />
+              <Text style={[styles.tabText, { color: activeTab === 'contact' ? '#fff' : colors.textSecondary }]}>{t('myCard.contactTab')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'bank' && { backgroundColor: colors.primary }]}
+              onPress={() => setActiveTab('bank')}
+            >
+              <Landmark color={activeTab === 'bank' ? '#fff' : colors.textSecondary} size={18} />
+              <Text style={[styles.tabText, { color: activeTab === 'bank' ? '#fff' : colors.textSecondary }]}>{t('myCard.bankTab')}</Text>
+            </TouchableOpacity>
+          </View>
 
-              <View style={styles.qrSection}>
-                <View style={[styles.qrContainer, styles.bankQrContainer]}>
-                  {bankQrUrl && !bankQrFailed ? (
-                    <View style={[styles.bankQrFrame, { width: bankQrSize, height: bankQrSize }]}>
-                      {bankQrLoading && (
-                        <View style={styles.qrLoadingOverlay}>
-                          <ActivityIndicator color={colors.primary} />
-                        </View>
-                      )}
-                      <Image
-                        source={{ uri: bankQrUrl }}
-                        style={styles.bankQrImage}
-                        resizeMode="contain"
-                        onLoadStart={() => setBankQrLoading(true)}
-                        onLoadEnd={() => setBankQrLoading(false)}
-                        onError={() => {
-                          setBankQrLoading(false);
-                          setBankQrFailed(true);
-                        }}
-                      />
-                    </View>
+          <View style={[styles.digitalCard, { backgroundColor: colors.card }]}>
+            <TouchableOpacity
+              style={[styles.cardEditButton, { backgroundColor: colors.background }]}
+              onPress={() => setEditingSection(activeTab === 'bank' ? 'bank' : 'ecard')}
+              accessibilityRole="button"
+              accessibilityLabel={activeTab === 'bank' ? t('myCard.editBankButton') : t('myCard.editECardButton')}
+            >
+              <Edit2 color={colors.primary} size={18} />
+            </TouchableOpacity>
+            {activeTab === 'contact' ? (
+              <>
+                <View style={styles.cardHeader}>
+                  {userData.avatar ? (
+                    <Image source={{ uri: userData.avatar }} style={styles.cardAvatar} />
                   ) : (
-                    <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
-                      <Landmark color={colors.textSecondary} size={34} />
-                      <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>{t('myCard.noBankQr')}</Text>
+                    <View style={[styles.cardAvatarPlaceholder, { backgroundColor: colors.background }]}>
+                      <UserIcon color={colors.primary} size={40} />
                     </View>
                   )}
+                  <View style={styles.headerInfo}>
+                    <Text style={[styles.cardName, { color: colors.text }]}>{userData.fullName}</Text>
+                    <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
+                      {[userData.title, userData.company].filter(Boolean).join(' • ')}
+                    </Text>
+                    {!!userData.department && (
+                      <Text style={[styles.cardCompany, { color: colors.primary }]}>{userData.department}</Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.qrSection}>
+                  <View style={styles.qrContainer}>
+                    <ContactQrCode
+                      value={vCardContent}
+                      size={contactQrSize}
+                      logoSize={contactQrLogoSize}
+                    />
+                  </View>
+                  <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
+                </View>
+                <View style={styles.detailGrid}>
+                  <PreviewDetail icon={Phone} label={t('myCard.phone')} value={formatInternationalPhone(userData.countryCode, userData.phone)} colors={colors} />
+                  <PreviewDetail icon={Mail} label={t('myCard.email')} value={userData.email} colors={colors} />
+                  <PreviewDetail icon={LinkIcon} label={t('myCard.website')} value={userData.website} colors={colors} />
+                  <PreviewDetail icon={MapPin} label={t('myCard.address')} value={userData.address} colors={colors} />
+                  <PreviewDetail icon={AtSign} label={t('myCard.linkedin')} value={userData.linkedin} colors={colors} />
+                  <PreviewDetail icon={MessageCircle} label={t('myCard.zalo')} value={formatInternationalPhone(userData.zaloCountryCode || userData.countryCode, userData.zalo)} colors={colors} />
+                  <PreviewDetail icon={MessageCircle} label={t('myCard.whatsapp')} value={formatInternationalPhone(userData.whatsappCountryCode || userData.countryCode, userData.whatsapp)} colors={colors} />
+                  <PreviewDetail icon={MessageCircle} label={t('myCard.telegram')} value={userData.telegram} colors={colors} />
+                </View>
+                {!!userData.bio && (
+                  <Text style={[styles.bioText, { color: colors.textSecondary }]} numberOfLines={4}>{userData.bio}</Text>
+                )}
+              </>
+            ) : (
+              <View style={styles.bankView}>
+                <View style={styles.bankHeader}>
+                  <View style={[styles.bankBadge, { backgroundColor: `${colors.primary}14` }]}>
+                    <Landmark color={colors.primary} size={16} />
+                    <Text style={[styles.bankBadgeText, { color: colors.primary }]}>VIETQR</Text>
+                  </View>
+                  <Text style={[styles.bankTitle, { color: colors.text }]}>{t('myCard.bankPaymentTitle')}</Text>
                 </View>
 
-                <View style={styles.bankInfoPanel}>
-                  <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.fullName}</Text>
-                  <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{getBankName(userData.bankName)}</Text>
-                  <Text style={[styles.bankAccountText, { color: colors.primary }]}>{userData.bankAccount}</Text>
+                <View style={styles.qrSection}>
+                  <View style={[styles.qrContainer, styles.bankQrContainer]}>
+                    {bankQrUrl && !bankQrFailed ? (
+                      <View style={[styles.bankQrFrame, { width: bankQrSize, height: bankQrSize }]}>
+                        {bankQrLoading && (
+                          <View style={styles.qrLoadingOverlay}>
+                            <ActivityIndicator color={colors.primary} />
+                          </View>
+                        )}
+                        <Image
+                          source={{ uri: bankQrUrl }}
+                          style={styles.bankQrImage}
+                          resizeMode="contain"
+                          onLoadStart={() => setBankQrLoading(true)}
+                          onLoadEnd={() => setBankQrLoading(false)}
+                          onError={() => {
+                            setBankQrLoading(false);
+                            setBankQrFailed(true);
+                          }}
+                        />
+                      </View>
+                    ) : (
+                      <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
+                        <Landmark color={colors.textSecondary} size={34} />
+                        <Text style={[styles.bankPlaceholderTitle, { color: colors.text }]}>{t('myCard.noBankQr')}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.bankInfoPanel}>
+                    <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.fullName}</Text>
+                    <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{getBankName(userData.bankName)}</Text>
+                    <Text style={[styles.bankAccountText, { color: colors.primary }]}>{userData.bankAccount}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
-        </View>
-
-        <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
-          <Edit2 color={colors.primary} size={20} />
-          <Text style={[styles.editButtonText, { color: colors.primary }]}>{t('myCard.editButton')}</Text>
-        </TouchableOpacity>
-        <Footer />
+            )}
+          </View>
+          <Footer />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -548,29 +834,88 @@ const ContactQrCode = ({ value, size, logoSize }) => {
   );
 };
 
-const InputField = ({ label, value, onChange, placeholder, keyboardType, colors }) => (
+const InputField = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+  keyboardType,
+  autoCapitalize,
+  colors,
+  multiline = false
+}) => (
   <View style={styles.inputContainer}>
     <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-    <TextInput 
-      style={[styles.input, { backgroundColor: colors.background, color: colors.text }]} 
-      value={value} 
-      onChangeText={onChange} 
-      placeholder={placeholder} 
+    <TextInput
+      style={[
+        styles.input,
+        multiline && styles.multilineInput,
+        { backgroundColor: colors.background, color: colors.text }
+      ]}
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
       keyboardType={keyboardType}
+      autoCapitalize={autoCapitalize}
       placeholderTextColor={colors.textSecondary}
+      multiline={multiline}
+      textAlignVertical={multiline ? 'top' : 'center'}
     />
   </View>
+);
+
+const PreviewDetail = ({ icon: Icon, label, value, colors }) => {
+  if (!value) return null;
+
+  return (
+    <View style={[styles.previewDetail, { backgroundColor: colors.background }]}>
+      <Icon color={colors.primary} size={16} />
+      <View style={styles.previewDetailText}>
+        <Text style={[styles.previewDetailLabel, { color: colors.textSecondary }]} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.previewDetailValue, { color: colors.text }]} numberOfLines={2}>{value}</Text>
+      </View>
+    </View>
+  );
+};
+
+const SaveConfirmModal = ({ visible, title, message, confirmLabel, cancelLabel, colors, onCancel, onConfirm }) => (
+  <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+    <View style={styles.confirmOverlay}>
+      <View style={[styles.confirmCard, { backgroundColor: colors.card }]}>
+        <View style={[styles.confirmIcon, { backgroundColor: `${colors.primary}16` }]}>
+          <Save color={colors.primary} size={24} />
+        </View>
+        <Text style={[styles.confirmTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>{message}</Text>
+        <View style={styles.confirmActions}>
+          <TouchableOpacity style={[styles.confirmCancel, { backgroundColor: colors.background }]} onPress={onCancel}>
+            <Text style={[styles.confirmCancelText, { color: colors.textSecondary }]}>{cancelLabel}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.confirmSave, { backgroundColor: colors.primary }]} onPress={onConfirm}>
+            <Save color="#fff" size={18} />
+            <Text style={styles.confirmSaveText}>{confirmLabel}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
 );
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { padding: Spacing.lg },
   previewScroll: { padding: Spacing.lg, alignItems: 'center' },
-  screenTitle: { fontSize: 32, fontWeight: '800', marginBottom: Spacing.xl, alignSelf: 'flex-start' },
+  screenTitle: { fontSize: 32, fontWeight: '800', marginBottom: Spacing.xl, alignSelf: 'flex-start', flex: 1 },
+  editScreenTitle: { marginBottom: 14 },
+  stickyEditHeader: { paddingHorizontal: Spacing.lg, paddingBottom: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 3, zIndex: 10 },
+  formTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  cancelPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9, marginTop: 2 },
+  cancelPillText: { marginLeft: 6, fontSize: 13, fontWeight: '800' },
   tabContainer: { flexDirection: 'row', padding: 5, borderRadius: 15, marginBottom: 20, width: '100%' },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12 },
   tabText: { marginLeft: 8, fontWeight: '700', fontSize: 13 },
   formCard: { borderRadius: 24, padding: Spacing.lg, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 15, elevation: 5 },
+  formIconHeader: { alignSelf: 'center', width: 70, height: 70, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.lg },
   sectionDivider: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 15, letterSpacing: 1 },
   avatarPicker: { alignSelf: 'center', marginBottom: Spacing.lg, position: 'relative' },
   avatarImage: { width: 100, height: 100, borderRadius: 50 },
@@ -579,19 +924,26 @@ const styles = StyleSheet.create({
   inputContainer: { marginBottom: Spacing.md },
   label: { fontSize: 13, fontWeight: '600', marginBottom: Spacing.xs, marginLeft: 4, textTransform: 'uppercase' },
   input: { borderRadius: 14, padding: 16, fontSize: 16 },
+  multilineInput: { minHeight: 92, lineHeight: 22 },
   phoneInputRow: { flexDirection: 'row', alignItems: 'center' },
   countrySelector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 55, borderRadius: 14, minWidth: 90, justifyContent: 'center' },
-  primaryButton: { borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md },
-  primaryButtonText: { color: '#FFF', fontSize: 17, fontWeight: 'bold', marginLeft: 10 },
-  digitalCard: { borderRadius: 32, padding: 25, width: '100%', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 30, elevation: 10 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  saveFab: { position: 'absolute', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14, elevation: 8 },
+  digitalCard: { borderRadius: 32, padding: 25, width: '100%', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 30, elevation: 10, position: 'relative' },
+  cardEditButton: { position: 'absolute', top: 16, right: 16, width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', zIndex: 3, elevation: 4 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingRight: 44 },
   cardAvatar: { width: 70, height: 70, borderRadius: 20 },
   cardAvatarPlaceholder: { width: 70, height: 70, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   headerInfo: { marginLeft: 15, flex: 1 },
   cardName: { fontSize: 22, fontWeight: 'bold' },
-  cardTitle: { fontSize: 14, marginTop: 2 },
+  cardTitle: { fontSize: 14, marginTop: 2, lineHeight: 20 },
   cardCompany: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginVertical: 15 },
+  detailGrid: { gap: 10 },
+  previewDetail: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
+  previewDetailText: { flex: 1, marginLeft: 10 },
+  previewDetailLabel: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 2 },
+  previewDetailValue: { fontSize: 14, fontWeight: '700', lineHeight: 19 },
+  bioText: { marginTop: 12, fontSize: 14, fontWeight: '600', lineHeight: 21 },
   qrSection: { alignItems: 'center', marginVertical: 10 },
   qrContainer: { padding: 12, backgroundColor: '#FFF', borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   contactQrWrapper: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
@@ -599,7 +951,7 @@ const styles = StyleSheet.create({
   qrLogoImage: { backgroundColor: '#FFF' },
   qrHint: { marginTop: 10, fontSize: 12, color: '#8E8E93', fontWeight: '600' },
   bankView: { alignItems: 'center', width: '100%' },
-  bankHeader: { alignItems: 'center', marginBottom: 14 },
+  bankHeader: { alignItems: 'center', marginBottom: 14, paddingHorizontal: 42 },
   bankBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginBottom: 10 },
   bankBadgeText: { marginLeft: 6, fontSize: 12, fontWeight: '800' },
   bankTitle: { fontSize: 21, fontWeight: '800' },
@@ -613,8 +965,16 @@ const styles = StyleSheet.create({
   bankOwnerName: { maxWidth: '100%', fontSize: 21, fontWeight: '800' },
   bankNameText: { marginTop: 4, fontSize: 13, fontWeight: '700' },
   bankAccountText: { marginTop: 4, fontSize: 24, fontWeight: '900', letterSpacing: 0 },
-  editButton: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl, padding: Spacing.md },
-  editButtonText: { fontSize: 16, fontWeight: '600', marginLeft: 10 },
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: Spacing.lg },
+  confirmCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
+  confirmIcon: { width: 54, height: 54, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
+  confirmTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
+  confirmMessage: { fontSize: 14, fontWeight: '600', lineHeight: 20, textAlign: 'center', marginBottom: 20 },
+  confirmActions: { flexDirection: 'row', gap: 10, width: '100%' },
+  confirmCancel: { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  confirmSave: { flex: 1.25, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
+  confirmCancelText: { fontSize: 15, fontWeight: '800' },
+  confirmSaveText: { color: '#fff', fontSize: 15, fontWeight: '800', marginLeft: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, height: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

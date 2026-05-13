@@ -64,6 +64,18 @@ open class MKWidgetProvider : AppWidgetProvider() {
         val email: String,
         val title: String,
         val company: String,
+        val department: String,
+        val website: String,
+        val address: String,
+        val linkedin: String,
+        val facebook: String,
+        val zalo: String,
+        val zaloCountryCode: String,
+        val whatsapp: String,
+        val whatsappCountryCode: String,
+        val telegram: String,
+        val bio: String,
+        val avatarUrl: String,
         val countryCode: String,
         val bankCode: String,
         val bankAccount: String
@@ -126,7 +138,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
 
                 if (hasContactInfo) {
                     val contactUser = user!!
-                    val vCard = "BEGIN:VCARD\nVERSION:3.0\nFN:${contactUser.fullName}\nTEL:${contactUser.countryCode}${contactUser.phone}\nEMAIL:${contactUser.email}\nORG:${contactUser.company}\nTITLE:${contactUser.title}\nEND:VCARD"
+                    val vCard = buildVCard(contactUser)
                     generateQRCode(context, vCard, qrSize)?.let { views.setImageViewBitmap(R.id.widget_qr_image, it) }
                     views.setContentDescription(R.id.widget_qr_image, "QR danh bạ của ${contactUser.fullName}")
                 } else {
@@ -184,6 +196,18 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 email = user.optCleanString("email"),
                 title = user.optCleanString("title"),
                 company = user.optCleanString("company"),
+                department = user.optCleanString("department"),
+                website = user.optCleanString("website"),
+                address = user.optCleanString("address"),
+                linkedin = user.optCleanString("linkedin"),
+                facebook = user.optCleanString("facebook"),
+                zalo = user.optCleanString("zalo"),
+                zaloCountryCode = normalizeCountryCode(user.optString("zaloCountryCode", user.optString("countryCode", "84"))),
+                whatsapp = user.optCleanString("whatsapp"),
+                whatsappCountryCode = normalizeCountryCode(user.optString("whatsappCountryCode", user.optString("countryCode", "84"))),
+                telegram = user.optCleanString("telegram"),
+                bio = user.optCleanString("bio"),
+                avatarUrl = user.optCleanString("avatarUrl"),
                 countryCode = normalizeCountryCode(user.optString("countryCode", "84")),
                 bankCode = normalizeBankCode(user.optCleanString("bankName")),
                 bankAccount = sanitizeBankAccount(user.optString("bankAccount", ""))
@@ -196,6 +220,88 @@ open class MKWidgetProvider : AppWidgetProvider() {
 
     private fun JSONObject.optCleanString(key: String): String {
         return optString(key, "").trim()
+    }
+
+    private fun buildVCard(user: WidgetUserData): String {
+        val lines = mutableListOf("BEGIN:VCARD", "VERSION:3.0")
+
+        fun add(key: String, value: String) {
+            val escaped = escapeVCardValue(value)
+            if (escaped.isNotBlank()) {
+                lines.add("$key:$escaped")
+            }
+        }
+
+        add("FN", user.fullName)
+        val nameParts = splitNameForVCard(user.fullName)
+        lines.add("N:${escapeVCardValue(nameParts.first)};${escapeVCardValue(nameParts.second)};;;")
+
+        val formattedPhone = if (user.phone.isBlank()) "" else "${user.countryCode}${user.phone}"
+        add("TEL;TYPE=CELL", formattedPhone)
+        add("EMAIL;TYPE=INTERNET,WORK", user.email)
+
+        val organization = listOf(user.company, user.department)
+            .map { escapeVCardValue(it) }
+            .filter { it.isNotBlank() }
+            .joinToString(";")
+        if (organization.isNotBlank()) {
+            lines.add("ORG:$organization")
+        }
+
+        add("TITLE", user.title)
+        add("URL;TYPE=WORK", user.website)
+
+        val address = escapeVCardValue(user.address)
+        if (address.isNotBlank()) {
+            lines.add("ADR;TYPE=WORK:;;$address;;;;")
+        }
+
+        listOf(
+            "linkedin" to user.linkedin,
+            "facebook" to user.facebook,
+            "zalo" to formatSocialPhone(user.zalo, user.zaloCountryCode),
+            "whatsapp" to formatSocialPhone(user.whatsapp, user.whatsappCountryCode),
+            "telegram" to user.telegram
+        ).forEach { (type, value) ->
+            val escaped = escapeVCardValue(value)
+            if (escaped.isNotBlank()) {
+                lines.add("X-SOCIALPROFILE;TYPE=$type:$escaped")
+            }
+        }
+
+        add("PHOTO;VALUE=URI", user.avatarUrl)
+        add("NOTE", user.bio)
+        lines.add("END:VCARD")
+        return lines.joinToString("\n")
+    }
+
+    private fun escapeVCardValue(value: String): String {
+        return value.trim()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace(",", "\\,")
+            .replace(";", "\\;")
+    }
+
+    private fun splitNameForVCard(fullName: String): Pair<String, String> {
+        val parts = fullName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (parts.size <= 1) {
+            return (parts.firstOrNull() ?: "") to ""
+        }
+
+        return parts.last() to parts.dropLast(1).joinToString(" ")
+    }
+
+    private fun formatSocialPhone(phone: String, countryCode: String): String {
+        val localPhone = phone.filter { it.isDigit() }.trimStart('0')
+        if (localPhone.isBlank()) return ""
+
+        val countryDigits = countryCode.filter { it.isDigit() }.ifBlank { "84" }
+        if (localPhone.startsWith(countryDigits) && localPhone.length > countryDigits.length) {
+            return "+$localPhone"
+        }
+
+        return "+$countryDigits$localPhone"
     }
 
     private fun normalizeCountryCode(value: String): String {

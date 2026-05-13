@@ -1,84 +1,21 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, Modal, NativeModules, PermissionsAndroid, Platform, Image as RNImage, ScrollView } from 'react-native';
 import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { BadgeCheck, Briefcase, Building2, Image as ImageIcon, Mail, Phone, RefreshCw, Scan, User, UserPlus, X } from 'lucide-react-native';
+import { AtSign, BadgeCheck, Briefcase, Building2, Globe2, Image as ImageIcon, Mail, MapPin, MessageCircle, Phone, RefreshCw, Scan, User, UserPlus, X } from 'lucide-react-native';
 import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
+import { parseVCard } from '../utils/vcard';
+import { buildExpoContact, contactPayloadFromResult } from '../utils/contactSavePayload';
 
-const emptyScanResult = {
-  isVCard: false,
-  fullName: '',
-  phone: '',
-  email: '',
-  title: '',
-  company: '',
-  raw: '',
-};
+const { ContactSaver } = NativeModules;
 
-const normalizeVCardValue = (value = '') => (
-  value
-    .replace(/\\n/g, '\n')
-    .replace(/\\,/g, ',')
-    .replace(/\\;/g, ';')
-    .replace(/\\\\/g, '\\')
-    .trim()
-);
+const requestAndroidContactsPermission = async () => {
+  if (Platform.OS !== 'android') return true;
 
-const unfoldVCardLines = (value) => (
-  `${value || ''}`
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .reduce((lines, line) => {
-      if (/^[ \t]/.test(line) && lines.length) {
-        lines[lines.length - 1] += line.slice(1);
-      } else {
-        lines.push(line);
-      }
-      return lines;
-    }, [])
-);
-
-const parseVCard = (rawValue) => {
-  const raw = `${rawValue || ''}`.trim();
-  const result = { ...emptyScanResult, raw };
-  const lines = unfoldVCardLines(raw);
-  const hasVCard = lines.some(line => line.trim().toUpperCase() === 'BEGIN:VCARD');
-
-  if (!hasVCard) {
-    return result;
-  }
-
-  const fields = lines.reduce((acc, line) => {
-    const separatorIndex = line.indexOf(':');
-    if (separatorIndex < 0) return acc;
-
-    const meta = line.slice(0, separatorIndex);
-    const key = meta.split(';')[0].trim().toUpperCase();
-    const value = normalizeVCardValue(line.slice(separatorIndex + 1));
-
-    if (value && !acc[key]) {
-      acc[key] = value;
-    }
-
-    return acc;
-  }, {});
-
-  const nameFromParts = fields.N
-    ? fields.N.split(';').filter(Boolean).reverse().join(' ').trim()
-    : '';
-
-  return {
-    ...result,
-    isVCard: true,
-    fullName: fields.FN || nameFromParts,
-    phone: fields.TEL || '',
-    email: fields.EMAIL || '',
-    title: fields.TITLE || '',
-    company: fields.ORG || '',
-  };
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_CONTACTS);
+  return result === PermissionsAndroid.RESULTS.GRANTED;
 };
 
 export default function ScanScreen() {
@@ -167,6 +104,18 @@ export default function ScanScreen() {
     setSavingContact(true);
 
     try {
+      if (ContactSaver?.saveContact) {
+        const hasPermission = await requestAndroidContactsPermission();
+        if (!hasPermission) {
+          Alert.alert(t('scan.contactsPermissionTitle'), t('scan.contactsPermissionDesc'));
+          return;
+        }
+
+        await ContactSaver.saveContact(contactPayloadFromResult(scanResult, t));
+        setContactSaved(true);
+        return;
+      }
+
       // Dynamic import to avoid crashing when the native module
       // isn't present in the current runtime (e.g. old dev client).
       const Contacts = await import('expo-contacts');
@@ -177,15 +126,7 @@ export default function ScanScreen() {
         return;
       }
 
-      const contact = {
-        [Contacts.Fields.FirstName]: scanResult.fullName,
-        [Contacts.Fields.PhoneNumbers]: scanResult.phone ? [{ label: 'mobile', number: scanResult.phone }] : [],
-        [Contacts.Fields.Emails]: scanResult.email ? [{ label: 'work', email: scanResult.email }] : [],
-        [Contacts.Fields.Company]: scanResult.company || '',
-        [Contacts.Fields.JobTitle]: scanResult.title || '',
-      };
-
-      await Contacts.addContactAsync(contact);
+      await Contacts.addContactAsync(buildExpoContact(Contacts, scanResult, t));
       setContactSaved(true);
     } catch (error) {
       const message = `${error?.message || error || ''}`;
@@ -276,6 +217,7 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
   if (!result) return null;
 
   const canSave = result.isVCard && Boolean(result.fullName) && !isSaved;
+  const avatarSource = result.avatarDataUri || result.avatarUrl;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -284,7 +226,13 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
           <View style={styles.resultHeader}>
             <View style={styles.resultTitleGroup}>
               <View style={[styles.resultAvatar, { backgroundColor: `${colors.primary}14` }]}>
-                {isSaved ? <BadgeCheck color={colors.success} size={28} /> : <User color={colors.primary} size={28} />}
+                {isSaved ? (
+                  <BadgeCheck color={colors.success} size={28} />
+                ) : avatarSource ? (
+                  <RNImage source={{ uri: avatarSource }} style={styles.resultAvatarImage} />
+                ) : (
+                  <User color={colors.primary} size={28} />
+                )}
               </View>
               <View style={styles.resultHeadingText}>
                 <Text style={[styles.resultEyebrow, { color: colors.textSecondary }]}>ECARD</Text>
@@ -299,7 +247,7 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
           </View>
 
           {result.isVCard ? (
-            <>
+            <ScrollView style={styles.resultDetailsScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.nameBlock}>
                 <Text style={[styles.contactName, { color: colors.text }]} numberOfLines={2}>
                   {result.fullName || t('scan.noName')}
@@ -316,6 +264,15 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
                 <DetailRow icon={Mail} label={t('scan.emailLabel')} value={result.email} colors={colors} />
                 <DetailRow icon={Briefcase} label={t('scan.titleLabel')} value={result.title} colors={colors} />
                 <DetailRow icon={Building2} label={t('scan.companyLabel')} value={result.company} colors={colors} />
+                <DetailRow icon={Building2} label={t('scan.departmentLabel')} value={result.department} colors={colors} />
+                <DetailRow icon={Globe2} label={t('scan.websiteLabel')} value={result.website} colors={colors} />
+                <DetailRow icon={MapPin} label={t('scan.addressLabel')} value={result.address} colors={colors} />
+                <DetailRow icon={AtSign} label={t('scan.linkedinLabel')} value={result.linkedin} colors={colors} />
+                <DetailRow icon={AtSign} label={t('scan.facebookLabel')} value={result.facebook} colors={colors} />
+                <DetailRow icon={MessageCircle} label={t('scan.zaloLabel')} value={result.zalo} colors={colors} />
+                <DetailRow icon={MessageCircle} label={t('scan.whatsappLabel')} value={result.whatsapp} colors={colors} />
+                <DetailRow icon={MessageCircle} label={t('scan.telegramLabel')} value={result.telegram} colors={colors} />
+                <DetailRow icon={MessageCircle} label={t('scan.bioLabel')} value={result.bio} colors={colors} />
               </View>
 
               {isSaved && (
@@ -324,7 +281,7 @@ const ScanResultModal = ({ visible, result, colors, isSaving, isSaved, onSave, o
                   <Text style={[styles.savedText, { color: colors.success }]}>{t('scan.savedToContacts')}</Text>
                 </View>
               )}
-            </>
+            </ScrollView>
           ) : (
             <View style={[styles.rawQrBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <Text style={[styles.rawQrText, { color: colors.text }]} numberOfLines={6}>{result.raw}</Text>
@@ -389,6 +346,8 @@ const styles = StyleSheet.create({
   resultEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   resultTitle: { fontSize: 22, fontWeight: '800', marginTop: 2 },
   closeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  resultAvatarImage: { width: 52, height: 52, borderRadius: 16 },
+  resultDetailsScroll: { maxHeight: 430 },
   nameBlock: { marginBottom: 16 },
   contactName: { fontSize: 25, fontWeight: '900' },
   contactSubtitle: { marginTop: 5, fontSize: 14, fontWeight: '600', lineHeight: 20 },

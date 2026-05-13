@@ -26,10 +26,44 @@ struct UserData: Codable {
     let email: String
     let title: String
     let company: String
+    let department: String?
+    let website: String?
+    let address: String?
+    let linkedin: String?
+    let facebook: String?
+    let zalo: String?
+    let zaloCountryCode: String?
+    let whatsapp: String?
+    let whatsappCountryCode: String?
+    let telegram: String?
+    let bio: String?
     let avatar: String?
+    let avatarUrl: String?
     let bankName: String?
     let bankAccount: String?
     let countryCode: String?
+}
+
+private func escapeVCardValue(_ value: String?) -> String {
+    (value ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\n", with: "\\n")
+        .replacingOccurrences(of: ",", with: "\\,")
+        .replacingOccurrences(of: ";", with: "\\;")
+}
+
+private func splitNameForVCard(_ fullName: String) -> (familyName: String, givenName: String) {
+    let parts = fullName
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .split(whereSeparator: { $0.isWhitespace })
+        .map(String.init)
+
+    guard parts.count > 1 else {
+        return (parts.first ?? "", "")
+    }
+
+    return (parts.last ?? "", parts.dropLast().joined(separator: " "))
 }
 
 extension UserData {
@@ -39,7 +73,19 @@ extension UserData {
         email: "a@example.com",
         title: "Giám đốc",
         company: "MKTech",
+        department: "Business",
+        website: "https://mktechvn.com",
+        address: "Ho Chi Minh City",
+        linkedin: nil,
+        facebook: nil,
+        zalo: nil,
+        zaloCountryCode: "84",
+        whatsapp: nil,
+        whatsappCountryCode: "84",
+        telegram: nil,
+        bio: nil,
         avatar: nil,
+        avatarUrl: nil,
         bankName: "MB",
         bankAccount: "0335337802",
         countryCode: "84"
@@ -57,7 +103,21 @@ extension UserData {
     }
     
     var formattedPhone: String {
-        "+\(normalizedCountryCode)\(normalizedPhone)"
+        normalizedPhone.isEmpty ? "" : "+\(normalizedCountryCode)\(normalizedPhone)"
+    }
+
+    func formattedSocialPhone(_ phone: String?, countryCode: String?) -> String {
+        let digits = (phone ?? "").filter { $0.isNumber }
+        let localPhone = String(digits.drop(while: { $0 == "0" }))
+        guard !localPhone.isEmpty else { return "" }
+
+        let countryDigits = (countryCode ?? self.countryCode ?? "84").filter { $0.isNumber }
+        let normalizedCountry = countryDigits.isEmpty ? "84" : countryDigits
+        if localPhone.hasPrefix(normalizedCountry), localPhone.count > normalizedCountry.count {
+            return "+\(localPhone)"
+        }
+
+        return "+\(normalizedCountry)\(localPhone)"
     }
 
     var hasContactInfo: Bool {
@@ -69,7 +129,54 @@ extension UserData {
     }
     
     var vCard: String {
-        "BEGIN:VCARD\nVERSION:3.0\nFN:\(fullName)\nTEL:\(formattedPhone)\nEMAIL:\(email)\nORG:\(company)\nTITLE:\(title)\nEND:VCARD"
+        var lines = ["BEGIN:VCARD", "VERSION:3.0"]
+
+        func add(_ key: String, _ value: String?) {
+            let escaped = escapeVCardValue(value)
+            if !escaped.isEmpty {
+                lines.append("\(key):\(escaped)")
+            }
+        }
+
+        add("FN", fullName)
+        let nameParts = splitNameForVCard(fullName)
+        lines.append("N:\(escapeVCardValue(nameParts.familyName));\(escapeVCardValue(nameParts.givenName));;;")
+        add("TEL;TYPE=CELL", formattedPhone)
+        add("EMAIL;TYPE=INTERNET,WORK", email)
+
+        let organization = [company, department ?? ""]
+            .map { escapeVCardValue($0) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ";")
+        if !organization.isEmpty {
+            lines.append("ORG:\(organization)")
+        }
+
+        add("TITLE", title)
+        add("URL;TYPE=WORK", website)
+
+        let escapedAddress = escapeVCardValue(address)
+        if !escapedAddress.isEmpty {
+            lines.append("ADR;TYPE=WORK:;;\(escapedAddress);;;;")
+        }
+
+        [
+            ("linkedin", linkedin),
+            ("facebook", facebook),
+            ("zalo", formattedSocialPhone(zalo, countryCode: zaloCountryCode)),
+            ("whatsapp", formattedSocialPhone(whatsapp, countryCode: whatsappCountryCode)),
+            ("telegram", telegram)
+        ].forEach { type, value in
+            let escaped = escapeVCardValue(value)
+            if !escaped.isEmpty {
+                lines.append("X-SOCIALPROFILE;TYPE=\(type):\(escaped)")
+            }
+        }
+
+        add("PHOTO;VALUE=URI", avatarUrl)
+        add("NOTE", bio)
+        lines.append("END:VCARD")
+        return lines.joined(separator: "\n")
     }
     
     var bankDisplayName: String {
