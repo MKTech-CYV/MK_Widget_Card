@@ -4,11 +4,13 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 
 private enum WidgetColors {
-    static let background = Color.white
+    static let background = Color(red: 0.98, green: 0.98, blue: 1.0)
+    static let surface = Color.white
     static let text = Color(red: 0.07, green: 0.09, blue: 0.15)
     static let secondaryText = Color(red: 0.29, green: 0.33, blue: 0.39)
     static let accent = Color(red: 0.0, green: 0.38, blue: 0.84)
     static let divider = Color(red: 0.90, green: 0.93, blue: 0.96)
+    static let qrBorder = Color(red: 0.85, green: 0.89, blue: 0.94)
 }
 
 private let qrRenderContext = CIContext(options: [
@@ -57,6 +59,14 @@ extension UserData {
     var formattedPhone: String {
         "+\(normalizedCountryCode)\(normalizedPhone)"
     }
+
+    var hasContactInfo: Bool {
+        !fullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var hasBankInfo: Bool {
+        bankQrUrl != nil
+    }
     
     var vCard: String {
         "BEGIN:VCARD\nVERSION:3.0\nFN:\(fullName)\nTEL:\(formattedPhone)\nEMAIL:\(email)\nORG:\(company)\nTITLE:\(title)\nEND:VCARD"
@@ -72,7 +82,7 @@ extension UserData {
         guard !account.isEmpty else { return nil }
         
         let encodedName = fullName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return "https://img.vietqr.io/image/\(bankDisplayName)-\(account)-compact.png?accountName=\(encodedName)"
+        return "https://img.vietqr.io/image/\(bankDisplayName)-\(account)-qr_only.png?accountName=\(encodedName)"
     }
 }
 
@@ -82,13 +92,13 @@ struct Provider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let data = context.isPreview ? UserData.preview : fetchUserData() ?? .preview
+        let data = context.isPreview ? UserData.preview : fetchUserData()
         let entry = SimpleEntry(date: Date(), userData: data)
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-        let entry = SimpleEntry(date: Date(), userData: fetchUserData() ?? .preview)
+        let entry = SimpleEntry(date: Date(), userData: fetchUserData())
         let timeline = Timeline(entries: [entry], policy: .atEnd)
         completion(timeline)
     }
@@ -122,6 +132,7 @@ struct ContactQRSmall: Widget {
         .configurationDisplayName("QR Liên hệ (Nhỏ)")
         .description("Mã QR danh thiếp cá nhân.")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
@@ -135,6 +146,7 @@ struct BankQRSmall: Widget {
         .configurationDisplayName("QR Ngân hàng (Nhỏ)")
         .description("Mã QR thanh toán nhanh.")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
@@ -148,6 +160,7 @@ struct ContactMedium: Widget {
         .configurationDisplayName("Danh thiếp (Ngang)")
         .description("QR và thông tin liên hệ.")
         .supportedFamilies([.systemMedium])
+        .contentMarginsDisabled()
     }
 }
 
@@ -161,6 +174,7 @@ struct BankMedium: Widget {
         .configurationDisplayName("Thanh toán (Ngang)")
         .description("QR và thông tin tài khoản.")
         .supportedFamilies([.systemMedium])
+        .contentMarginsDisabled()
     }
 }
 
@@ -180,10 +194,19 @@ struct ContactQRSmallView: View {
     var entry: SimpleEntry
     var body: some View {
         GeometryReader { geometry in
-            let qrSize = min(164, max(112, min(geometry.size.width, geometry.size.height) - 6))
+            let surfaceSize = min(176, max(112, min(geometry.size.width, geometry.size.height) - 16))
+            let qrSize = max(1, surfaceSize - 8)
 
             ZStack {
-                QRWithLogo(content: entry.user.vCard, size: qrSize)
+                if let user = entry.userData, user.hasContactInfo {
+                    WidgetQRSurface(size: surfaceSize) {
+                        QRWithLogo(content: user.vCard, size: qrSize)
+                    }
+                } else {
+                    WidgetQRSurface(size: surfaceSize) {
+                        WidgetMessageView(message: "Vui lòng nhập thông tin eCard", size: qrSize)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -195,10 +218,19 @@ struct BankQRSmallView: View {
     var entry: SimpleEntry
     var body: some View {
         GeometryReader { geometry in
-            let qrSize = min(164, max(112, min(geometry.size.width, geometry.size.height) - 6))
+            let surfaceSize = min(176, max(112, min(geometry.size.width, geometry.size.height) - 16))
+            let qrSize = max(1, surfaceSize - 8)
 
             ZStack {
-                RemoteImage(url: entry.user.bankQrUrl, size: qrSize)
+                if let user = entry.userData, user.hasBankInfo {
+                    WidgetQRSurface(size: surfaceSize) {
+                        RemoteImage(url: user.bankQrUrl, size: qrSize)
+                    }
+                } else {
+                    WidgetQRSurface(size: surfaceSize) {
+                        WidgetMessageView(message: "Vui lòng nhập thông tin ngân hàng", size: qrSize)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -209,41 +241,44 @@ struct BankQRSmallView: View {
 struct ContactMediumView: View {
     var entry: SimpleEntry
     var body: some View {
-        let user = entry.user
+        let user = entry.userData
         
         GeometryReader { geometry in
-            let qrSize = min(132, max(98, geometry.size.height - 12))
+            let surfaceSize = min(132, max(92, geometry.size.height - 16))
+            let qrSize = max(1, surfaceSize - 8)
 
-            HStack(spacing: 12) {
-                QRWithLogo(content: user.vCard, size: qrSize)
+            HStack(spacing: 10) {
+                if let user, user.hasContactInfo {
+                    WidgetQRSurface(size: surfaceSize) {
+                        QRWithLogo(content: user.vCard, size: qrSize)
+                    }
+                } else {
+                    WidgetQRSurface(size: surfaceSize) {
+                        WidgetMessageView(message: "Vui lòng nhập thông tin eCard", size: qrSize)
+                    }
+                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(user.fullName)
-                        .font(.system(size: 15, weight: .bold))
+                VStack(alignment: .leading, spacing: 5) {
+                    WidgetBadge(text: "ECARD")
+
+                    Text(user?.fullName.isEmpty == false ? user?.fullName ?? "" : "Chưa có eCard")
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(WidgetColors.text)
+                        .lineLimit(1)
 
-                    Text(user.title)
+                    Text(user?.title.isEmpty == false ? user?.title ?? "" : "Mở app để cập nhật")
                         .font(.system(size: 11))
                         .foregroundColor(WidgetColors.secondaryText)
+                        .lineLimit(1)
 
-                    Text(user.company)
-                        .font(.system(size: 11, weight: .semibold))
+                    Text(user?.company ?? "")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(WidgetColors.accent)
-
-                    Rectangle()
-                        .fill(WidgetColors.divider)
-                        .frame(height: 1)
-                        .padding(.vertical, 4)
-
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.fill").font(.system(size: 8))
-                        Text(user.formattedPhone).font(.system(size: 10))
-                    }
-                    .foregroundColor(WidgetColors.secondaryText)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
+            .padding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
@@ -253,35 +288,44 @@ struct ContactMediumView: View {
 struct BankMediumView: View {
     var entry: SimpleEntry
     var body: some View {
-        let user = entry.user
+        let user = entry.userData
         
         GeometryReader { geometry in
-            let qrSize = min(132, max(98, geometry.size.height - 12))
+            let surfaceSize = min(132, max(92, geometry.size.height - 16))
+            let qrSize = max(1, surfaceSize - 8)
 
-            HStack(spacing: 12) {
-                RemoteImage(url: user.bankQrUrl, size: qrSize)
+            HStack(spacing: 10) {
+                if let user, user.hasBankInfo {
+                    WidgetQRSurface(size: surfaceSize) {
+                        RemoteImage(url: user.bankQrUrl, size: qrSize)
+                    }
+                } else {
+                    WidgetQRSurface(size: surfaceSize) {
+                        WidgetMessageView(message: "Vui lòng nhập thông tin ngân hàng", size: qrSize)
+                    }
+                }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("THANH TOÁN")
-                        .font(.system(size: 10, weight: .black))
-                        .foregroundColor(WidgetColors.accent)
-                        .padding(.bottom, 2)
+                VStack(alignment: .leading, spacing: 5) {
+                    WidgetBadge(text: "VIETQR")
 
-                    Text(user.fullName)
-                        .font(.system(size: 15, weight: .bold))
+                    Text(user?.fullName.isEmpty == false ? user?.fullName ?? "" : "Chưa có tài khoản")
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(WidgetColors.text)
+                        .lineLimit(1)
 
-                    Text(user.bankDisplayName)
-                        .font(.system(size: 12))
+                    Text(user?.bankDisplayName ?? "Mở app để cập nhật")
+                        .font(.system(size: 11))
                         .foregroundColor(WidgetColors.secondaryText)
+                        .lineLimit(1)
 
-                    Text(user.bankAccount ?? "")
-                        .font(.system(size: 16, weight: .black))
-                        .foregroundColor(WidgetColors.text)
+                    Text(user?.bankAccount ?? "")
+                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .foregroundColor(WidgetColors.accent)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 8)
+            .padding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
@@ -426,6 +470,77 @@ struct QRPlaceholder: View {
         .foregroundColor(WidgetColors.secondaryText)
         .frame(width: size, height: size)
         .background(Color.white)
+    }
+}
+
+struct WidgetQRSurface<Content: View>: View {
+    let size: CGFloat
+    let content: () -> Content
+
+    init(size: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+        self.size = size
+        self.content = content
+    }
+
+    var body: some View {
+        content()
+            .frame(width: max(1, size - 8), height: max(1, size - 8))
+            .padding(4)
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: min(16, size * 0.12), style: .continuous)
+                    .fill(WidgetColors.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: min(16, size * 0.12), style: .continuous)
+                    .stroke(WidgetColors.qrBorder, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: min(16, size * 0.12), style: .continuous))
+    }
+}
+
+struct WidgetBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .black))
+            .foregroundColor(WidgetColors.accent)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(WidgetColors.accent.opacity(0.10))
+            )
+    }
+}
+
+struct WidgetMessageView: View {
+    let message: String
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.08, style: .continuous)
+                .fill(Color.white)
+
+            VStack(spacing: size * 0.05) {
+                Image(systemName: "qrcode")
+                    .font(.system(size: size * 0.24, weight: .semibold))
+                    .foregroundColor(WidgetColors.accent)
+
+                Text(message)
+                    .font(.system(size: max(10, size * 0.074), weight: .bold))
+                    .foregroundColor(WidgetColors.text)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.72)
+                    .lineLimit(3)
+                    .padding(.horizontal, size * 0.08)
+            }
+        }
+        .frame(width: size, height: size)
+        .widgetAccentableCompat(false)
     }
 }
 

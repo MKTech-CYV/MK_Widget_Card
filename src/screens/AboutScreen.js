@@ -46,7 +46,7 @@ export default function AboutScreen() {
   const Phone = Icons.Phone || Icons.Info || View;
   const Globe = Icons.Globe || Icons.Info || View;
 
-  const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-compact.png?amount=0&addInfo=Donate%20MK%20Widget%20Card&accountName=TRAN%20MINH%20KHOI`;
+  const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-qr_only.png?amount=0&addInfo=Donate%20MK%20Widget%20Card&accountName=TRAN%20MINH%20KHOI`;
 
   return (
     <ScrollView 

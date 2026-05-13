@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
-    android:padding="4dp">
+    android:padding="2dp">
 
     <ImageView
         android:id="@+id/widget_qr_image"
@@ -11,7 +11,7 @@
         android:layout_height="match_parent"
         android:background="@drawable/widget_qr_surface"
         android:contentDescription="@string/widget_qr_content_description"
-        android:padding="2dp"
+        android:padding="1dp"
         android:scaleType="fitCenter"
         android:layout_gravity="center" />
 </FrameLayout>

@@ -67,15 +67,15 @@ const normalizePhoneForIOS = (phone, countryCode = '84') => {
 };
 
 const normalizePhoneInput = (phone, countryCode) => (
-  Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : phone
+  normalizePhoneForIOS(phone, countryCode)
 );
 
 const getPhoneForStorage = (phone, countryCode) => (
-  Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : `${phone || ''}`.trim()
+  normalizePhoneForIOS(phone, countryCode)
 );
 
 const formatInternationalPhone = (countryCode, phone) => {
-  const localPhone = Platform.OS === 'ios' ? normalizePhoneForIOS(phone, countryCode) : phone || '';
+  const localPhone = normalizePhoneForIOS(phone, countryCode);
   return `+${normalizeCountryCode(countryCode)}${localPhone}`;
 };
 
@@ -195,7 +195,7 @@ export default function MyCardScreen() {
   };
 
   const bankQrUrl = userData?.bankName && userData?.bankAccount ? 
-    `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-compact2.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
+    `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.fullName)}` : null;
   
   const bankQrSize = Math.min(width * 0.62, 280);
   const contactQrSize = Math.min(width * 0.52, 260);
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
   phoneInputRow: { flexDirection: 'row', alignItems: 'center' },
   countrySelector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 55, borderRadius: 14, minWidth: 90, justifyContent: 'center' },
   primaryButton: { borderRadius: 16, padding: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.md },
-  primaryButtonText: { color: '#FFF', fontSize: 17, fontWeight: 'bold', marginLeft: 8 },
+  primaryButtonText: { color: '#FFF', fontSize: 17, fontWeight: 'bold', marginLeft: 10 },
   digitalCard: { borderRadius: 32, padding: 25, width: '100%', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 30, elevation: 10 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   cardAvatar: { width: 70, height: 70, borderRadius: 20 },
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   bankNameText: { marginTop: 4, fontSize: 13, fontWeight: '700' },
   bankAccountText: { marginTop: 4, fontSize: 24, fontWeight: '900', letterSpacing: 0 },
   editButton: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xl, padding: Spacing.md },
-  editButtonText: { fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  editButtonText: { fontSize: 16, fontWeight: '600', marginLeft: 10 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, height: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

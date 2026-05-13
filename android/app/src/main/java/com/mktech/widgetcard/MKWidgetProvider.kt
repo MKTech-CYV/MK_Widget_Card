@@ -17,6 +17,7 @@ import android.widget.RemoteViews
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.mktech.widgetcard.R
 import org.json.JSONObject
 import java.lang.Exception
@@ -121,35 +122,47 @@ open class MKWidgetProvider : AppWidgetProvider() {
             val qrSize = if (isMedium) MEDIUM_QR_SIZE else SMALL_QR_SIZE
 
             if (isContactWidget) {
-                val vCard = "BEGIN:VCARD\nVERSION:3.0\nFN:${user.fullName}\nTEL:${user.countryCode}${user.phone}\nEMAIL:${user.email}\nORG:${user.company}\nTITLE:${user.title}\nEND:VCARD"
-                generateQRCode(vCard, qrSize)?.let { views.setImageViewBitmap(R.id.widget_qr_image, it) }
-                views.setContentDescription(R.id.widget_qr_image, "QR danh bạ của ${user.fullName}")
+                val hasContactInfo = user?.fullName?.isNotBlank() == true
+
+                if (hasContactInfo) {
+                    val contactUser = user!!
+                    val vCard = "BEGIN:VCARD\nVERSION:3.0\nFN:${contactUser.fullName}\nTEL:${contactUser.countryCode}${contactUser.phone}\nEMAIL:${contactUser.email}\nORG:${contactUser.company}\nTITLE:${contactUser.title}\nEND:VCARD"
+                    generateQRCode(context, vCard, qrSize)?.let { views.setImageViewBitmap(R.id.widget_qr_image, it) }
+                    views.setContentDescription(R.id.widget_qr_image, "QR danh bạ của ${contactUser.fullName}")
+                } else {
+                    views.setImageViewBitmap(R.id.widget_qr_image, generateMessageBitmap(qrSize, "Vui lòng nhập thông tin eCard"))
+                    views.setContentDescription(R.id.widget_qr_image, "Vui lòng nhập thông tin eCard")
+                }
 
                 if (isMedium) {
-                    views.setTextViewText(R.id.widget_badge, "VCARD")
-                    views.setTextViewText(R.id.widget_title, user.fullName)
-                    views.setTextViewText(R.id.widget_subtitle, user.title)
-                    views.setTextViewText(R.id.widget_extra, user.company)
+                    views.setTextViewText(R.id.widget_badge, "ECARD")
+                    views.setTextViewText(R.id.widget_title, if (hasContactInfo) user?.fullName else "Chưa có eCard")
+                    views.setTextViewText(R.id.widget_subtitle, if (hasContactInfo) user?.title else "Mở app để cập nhật")
+                    views.setTextViewText(R.id.widget_extra, if (hasContactInfo) user?.company else "")
                 }
             } else {
-                val hasBankInfo = user.bankCode.isNotBlank() && user.bankAccount.isNotBlank()
-                val bankName = displayBankName(user.bankCode)
+                val bankUser = user
+                val hasBankInfo = bankUser != null && bankUser.bankCode.isNotBlank() && bankUser.bankAccount.isNotBlank()
+                val bankName = displayBankName(bankUser?.bankCode ?: "")
                 val qrBitmap = if (hasBankInfo) {
-                    val vietQrUrl = buildVietQrUrl(user)
+                    val vietQrUrl = buildVietQrUrl(bankUser!!)
                     downloadBitmap(vietQrUrl, qrSize)
                         ?: generatePlaceholderBitmap(qrSize, "VietQR", "Không tải được")
                 } else {
-                    generatePlaceholderBitmap(qrSize, "VietQR", "Thêm STK")
+                    generateMessageBitmap(qrSize, "Vui lòng nhập thông tin ngân hàng")
                 }
 
                 views.setImageViewBitmap(R.id.widget_qr_image, qrBitmap)
-                views.setContentDescription(R.id.widget_qr_image, "QR thanh toán VietQR")
+                views.setContentDescription(
+                    R.id.widget_qr_image,
+                    if (hasBankInfo) "QR thanh toán VietQR" else "Vui lòng nhập thông tin ngân hàng"
+                )
 
                 if (isMedium) {
                     views.setTextViewText(R.id.widget_badge, "VIETQR")
-                    views.setTextViewText(R.id.widget_title, if (hasBankInfo) user.fullName else "Chưa có tài khoản")
+                    views.setTextViewText(R.id.widget_title, if (hasBankInfo) bankUser?.fullName else "Chưa có tài khoản")
                     views.setTextViewText(R.id.widget_subtitle, if (hasBankInfo) bankName else "Mở app để cập nhật")
-                    views.setTextViewText(R.id.widget_extra, if (hasBankInfo) user.bankAccount else "")
+                    views.setTextViewText(R.id.widget_extra, if (hasBankInfo) bankUser?.bankAccount else "")
                 }
             }
         } catch (e: Exception) {
@@ -159,41 +172,35 @@ open class MKWidgetProvider : AppWidgetProvider() {
         appWidgetManager.updateAppWidget(appWidgetId, views)
     }
 
-    private fun readUserData(context: Context): WidgetUserData {
-        val fallback = WidgetUserData(
-            fullName = "Tran Minh Khoi",
-            phone = "0988 20 40 60",
-            email = "contact@tranminhkhoi.dev",
-            title = "Chuyên viên phát triển ứng dụng",
-            company = "MK Widget Card",
-            countryCode = "+84",
-            bankCode = "MB",
-            bankAccount = ""
-        )
-
+    private fun readUserData(context: Context): WidgetUserData? {
         val prefs = context.getSharedPreferences("group.com.mk.ecard", Context.MODE_PRIVATE)
-        val userDataStr = prefs.getString("userData", null) ?: return fallback
+        val userDataStr = prefs.getString("userData", null) ?: return null
 
         return try {
             val user = JSONObject(userDataStr)
-            fallback.copy(
-                fullName = user.optCleanString("fullName", fallback.fullName),
-                phone = user.optCleanString("phone", fallback.phone),
-                email = user.optCleanString("email", fallback.email),
-                title = user.optCleanString("title", fallback.title),
-                company = user.optCleanString("company", fallback.company),
-                countryCode = user.optCleanString("countryCode", fallback.countryCode),
-                bankCode = normalizeBankCode(user.optCleanString("bankName", fallback.bankCode)),
+            WidgetUserData(
+                fullName = user.optCleanString("fullName"),
+                phone = sanitizePhone(user.optString("phone", "")),
+                email = user.optCleanString("email"),
+                title = user.optCleanString("title"),
+                company = user.optCleanString("company"),
+                countryCode = normalizeCountryCode(user.optString("countryCode", "84")),
+                bankCode = normalizeBankCode(user.optCleanString("bankName")),
                 bankAccount = sanitizeBankAccount(user.optString("bankAccount", ""))
             )
         } catch (e: Exception) {
             Log.e("MKWidget", "Invalid user data: ${e.message}")
-            fallback
+            null
         }
     }
 
-    private fun JSONObject.optCleanString(key: String, fallback: String): String {
-        return optString(key, fallback).trim().ifBlank { fallback }
+    private fun JSONObject.optCleanString(key: String): String {
+        return optString(key, "").trim()
+    }
+
+    private fun normalizeCountryCode(value: String): String {
+        val digits = value.filter { it.isDigit() }.ifBlank { "84" }
+        return "+$digits"
     }
 
     private fun normalizeBankCode(value: String): String {
@@ -204,6 +211,10 @@ open class MKWidgetProvider : AppWidgetProvider() {
 
     private fun sanitizeBankAccount(value: String): String {
         return value.filter { it.isDigit() }
+    }
+
+    private fun sanitizePhone(value: String): String {
+        return value.filter { it.isDigit() }.trimStart('0')
     }
 
     private fun displayBankName(bankCode: String): String {
@@ -259,10 +270,13 @@ open class MKWidgetProvider : AppWidgetProvider() {
         return output
     }
 
-    private fun generateQRCode(content: String, size: Int): Bitmap? {
+    private fun generateQRCode(context: Context, content: String, size: Int): Bitmap? {
         return try {
             val writer = QRCodeWriter()
-            val hints = mapOf(EncodeHintType.MARGIN to 1)
+            val hints = mapOf(
+                EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.Q,
+                EncodeHintType.MARGIN to 1
+            )
             val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size, hints)
             val width = bitMatrix.width
             val height = bitMatrix.height
@@ -272,10 +286,93 @@ open class MKWidgetProvider : AppWidgetProvider() {
                     bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
                 }
             }
-            bitmap
+            drawLogoBadge(context, bitmap)
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun drawLogoBadge(context: Context, source: Bitmap): Bitmap {
+        val output = source.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(output)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val size = minOf(output.width, output.height).toFloat()
+        val badgeSize = size * 0.23f
+        val logoSize = size * 0.18f
+        val badgeLeft = (output.width - badgeSize) / 2f
+        val badgeTop = (output.height - badgeSize) / 2f
+        val badgeRect = RectF(badgeLeft, badgeTop, badgeLeft + badgeSize, badgeTop + badgeSize)
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(badgeRect, badgeSize * 0.22f, badgeSize * 0.22f, paint)
+
+        val logo = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)
+            ?: BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+
+        if (logo != null) {
+            val logoLeft = (output.width - logoSize) / 2f
+            val logoTop = (output.height - logoSize) / 2f
+            canvas.drawBitmap(logo, null, RectF(logoLeft, logoTop, logoLeft + logoSize, logoTop + logoSize), paint)
+        } else {
+            paint.color = Color.parseColor("#0A66C2")
+            paint.textAlign = Paint.Align.CENTER
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            paint.textSize = size * 0.08f
+            val y = output.height / 2f - (paint.descent() + paint.ascent()) / 2f
+            canvas.drawText("MK", output.width / 2f, y, paint)
+        }
+
+        return output
+    }
+
+    private fun generateMessageBitmap(size: Int, message: String): Bitmap {
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val background = RectF(0f, 0f, size.toFloat(), size.toFloat())
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(background, size * 0.08f, size * 0.08f, paint)
+
+        drawFinder(canvas, paint, size * 0.14f, size * 0.14f, size * 0.16f)
+        drawFinder(canvas, paint, size * 0.70f, size * 0.14f, size * 0.16f)
+        drawFinder(canvas, paint, size * 0.14f, size * 0.70f, size * 0.16f)
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.parseColor("#111827")
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        paint.textSize = size * 0.058f
+
+        val lines = wrapText(message, paint, size * 0.66f)
+        val lineHeight = paint.textSize * 1.32f
+        val startY = size / 2f - ((lines.size - 1) * lineHeight / 2f) - (paint.descent() + paint.ascent()) / 2f
+        lines.forEachIndexed { index, line ->
+            canvas.drawText(line, size / 2f, startY + index * lineHeight, paint)
+        }
+
+        return bitmap
+    }
+
+    private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {
+        val words = text.split(" ")
+        val lines = mutableListOf<String>()
+        var currentLine = ""
+
+        for (word in words) {
+            val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
+            if (paint.measureText(candidate) <= maxWidth) {
+                currentLine = candidate
+            } else {
+                if (currentLine.isNotEmpty()) lines.add(currentLine)
+                currentLine = word
+            }
+        }
+
+        if (currentLine.isNotEmpty()) lines.add(currentLine)
+        return lines.take(3)
     }
 
     private fun generatePlaceholderBitmap(size: Int, title: String, subtitle: String): Bitmap {
