@@ -15,6 +15,7 @@ import android.graphics.Typeface
 import android.util.Log
 import android.widget.RemoteViews
 import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.mktech.widgetcard.R
 import org.json.JSONObject
@@ -28,8 +29,8 @@ import java.util.concurrent.Executors
 open class MKWidgetProvider : AppWidgetProvider() {
     companion object {
         private val widgetExecutor = Executors.newSingleThreadExecutor()
-        private const val SMALL_QR_SIZE = 520
-        private const val MEDIUM_QR_SIZE = 420
+        private const val SMALL_QR_SIZE = 640
+        private const val MEDIUM_QR_SIZE = 560
 
         private val bankAliases = mapOf(
             "MB BANK" to "MB",
@@ -261,7 +262,8 @@ open class MKWidgetProvider : AppWidgetProvider() {
     private fun generateQRCode(content: String, size: Int): Bitmap? {
         return try {
             val writer = QRCodeWriter()
-            val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size)
+            val hints = mapOf(EncodeHintType.MARGIN to 1)
+            val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size, hints)
             val width = bitMatrix.width
             val height = bitMatrix.height
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)

@@ -85,8 +85,8 @@ export default function AboutScreen() {
         <ContactLink 
           icon={Globe} 
           label={t('about.website')} 
-          value="tranminhkhoi.dev" 
-          onPress={() => Linking.openURL('https://tranminhkhoi.dev')}
+          value="mktechvn.com"
+          onPress={() => Linking.openURL('https://mktechvn.com')}
           colors={colors} 
         />
         <ContactLink 

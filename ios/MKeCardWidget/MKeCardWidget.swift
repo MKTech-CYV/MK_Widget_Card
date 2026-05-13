@@ -180,7 +180,7 @@ struct ContactQRSmallView: View {
     var entry: SimpleEntry
     var body: some View {
         GeometryReader { geometry in
-            let qrSize = min(155, max(96, min(geometry.size.width, geometry.size.height) - 16))
+            let qrSize = min(164, max(112, min(geometry.size.width, geometry.size.height) - 6))
 
             ZStack {
                 QRWithLogo(content: entry.user.vCard, size: qrSize)
@@ -194,8 +194,13 @@ struct ContactQRSmallView: View {
 struct BankQRSmallView: View {
     var entry: SimpleEntry
     var body: some View {
-        ZStack {
-            RemoteImage(url: entry.user.bankQrUrl, size: 155)
+        GeometryReader { geometry in
+            let qrSize = min(164, max(112, min(geometry.size.width, geometry.size.height) - 6))
+
+            ZStack {
+                RemoteImage(url: entry.user.bankQrUrl, size: qrSize)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
     }
@@ -207,9 +212,9 @@ struct ContactMediumView: View {
         let user = entry.user
         
         GeometryReader { geometry in
-            let qrSize = min(110, max(82, geometry.size.height - 26))
+            let qrSize = min(132, max(98, geometry.size.height - 12))
 
-            HStack(spacing: 18) {
+            HStack(spacing: 12) {
                 QRWithLogo(content: user.vCard, size: qrSize)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -238,7 +243,7 @@ struct ContactMediumView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 15)
+            .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
@@ -250,30 +255,35 @@ struct BankMediumView: View {
     var body: some View {
         let user = entry.user
         
-        HStack(spacing: 20) {
-            RemoteImage(url: user.bankQrUrl, size: 110)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("THANH TOÁN")
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundColor(WidgetColors.accent)
-                    .padding(.bottom, 2)
-                
-                Text(user.fullName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(WidgetColors.text)
-                
-                Text(user.bankDisplayName)
-                    .font(.system(size: 12))
-                    .foregroundColor(WidgetColors.secondaryText)
-                
-                Text(user.bankAccount ?? "")
-                    .font(.system(size: 16, weight: .black))
-                    .foregroundColor(WidgetColors.text)
+        GeometryReader { geometry in
+            let qrSize = min(132, max(98, geometry.size.height - 12))
+
+            HStack(spacing: 12) {
+                RemoteImage(url: user.bankQrUrl, size: qrSize)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("THANH TOÁN")
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundColor(WidgetColors.accent)
+                        .padding(.bottom, 2)
+
+                    Text(user.fullName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(WidgetColors.text)
+
+                    Text(user.bankDisplayName)
+                        .font(.system(size: 12))
+                        .foregroundColor(WidgetColors.secondaryText)
+
+                    Text(user.bankAccount ?? "")
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundColor(WidgetColors.text)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 15)
         .widgetBackgroundCompat(WidgetColors.background)
     }
 }

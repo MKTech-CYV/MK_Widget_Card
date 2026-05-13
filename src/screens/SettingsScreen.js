@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
 import { ChevronRight, ShieldCheck, Moon, Bell, Info, Sun, Monitor, Languages } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Spacing } from '../constants/Theme';
@@ -11,7 +11,24 @@ export default function SettingsScreen({ navigation }) {
   const { colors, mode, setTheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { language, setLanguage } = useAppPreferences();
+  const [changingLanguage, setChangingLanguage] = useState(null);
   const t = (key) => getTranslation(language, key);
+
+  const handleLanguageChange = async (nextLanguage) => {
+    if (nextLanguage === language || changingLanguage) {
+      return;
+    }
+
+    setChangingLanguage(nextLanguage);
+    try {
+      await Promise.all([
+        setLanguage(nextLanguage),
+        new Promise(resolve => setTimeout(resolve, 350)),
+      ]);
+    } finally {
+      setChangingLanguage(null);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -53,14 +70,18 @@ export default function SettingsScreen({ navigation }) {
               active={language === 'vi'} 
               icon={<Languages size={20} color={language === 'vi' ? '#fff' : colors.primary} />} 
               label={t('common.vietnamese')} 
-              onPress={() => setLanguage('vi')}
+              onPress={() => handleLanguageChange('vi')}
+              loading={changingLanguage === 'vi'}
+              disabled={Boolean(changingLanguage)}
               colors={colors}
             />
             <ThemeOption 
               active={language === 'en'} 
               icon={<Languages size={20} color={language === 'en' ? '#fff' : colors.primary} />} 
               label={t('common.english')} 
-              onPress={() => setLanguage('en')}
+              onPress={() => handleLanguageChange('en')}
+              loading={changingLanguage === 'en'}
+              disabled={Boolean(changingLanguage)}
               colors={colors}
             />
           </View>
@@ -98,16 +119,19 @@ export default function SettingsScreen({ navigation }) {
   );
 }
 
-const ThemeOption = ({ active, icon, label, onPress, colors }) => (
+const ThemeOption = ({ active, icon, label, onPress, colors, loading = false, disabled = false }) => (
   <TouchableOpacity 
     style={[
       styles.themeOption, 
       { backgroundColor: colors.background },
-      active && { backgroundColor: colors.primary }
+      active && { backgroundColor: colors.primary },
+      disabled && !loading && { opacity: 0.62 }
     ]} 
     onPress={onPress}
+    disabled={disabled || loading}
+    accessibilityState={{ selected: active, busy: loading, disabled: disabled || loading }}
   >
-    {icon}
+    {loading ? <ActivityIndicator color={active ? '#fff' : colors.primary} /> : icon}
     <Text style={[
       styles.themeOptionLabel, 
       { color: colors.text },
@@ -121,6 +145,7 @@ export function TermsScreen() {
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
+  const termBlocks = ['block1', 'block2', 'block3', 'block4', 'block5'];
   
   return (
     <ScrollView 
@@ -130,9 +155,14 @@ export function TermsScreen() {
       <Text style={[styles.screenTitle, { color: colors.text }]}>{t('terms.title')}</Text>
       <View style={[styles.termsCard, { backgroundColor: colors.card }]}>
         <ShieldCheck color={colors.success} size={40} style={{ alignSelf: 'center', marginBottom: 20 }} />
-        <TermBlock title={t('terms.block1Title')} content={t('terms.block1Content')} colors={colors} />
-        <TermBlock title={t('terms.block2Title')} content={t('terms.block2Content')} colors={colors} />
-        <TermBlock title={t('terms.block3Title')} content={t('terms.block3Content')} colors={colors} />
+        {termBlocks.map(block => (
+          <TermBlock
+            key={block}
+            title={t(`terms.${block}Title`)}
+            content={t(`terms.${block}Content`)}
+            colors={colors}
+          />
+        ))}
       </View>
       <Footer />
     </ScrollView>

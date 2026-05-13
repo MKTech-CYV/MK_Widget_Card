@@ -64,7 +64,7 @@ export default function AppNavigator() {
   return (
     <>
       <Tab.Navigator
-        initialRouteName={t('nav.myCard')}
+        initialRouteName="MyCardTab"
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: colors.primary,
@@ -72,21 +72,34 @@ export default function AppNavigator() {
           tabBarStyle: [styles.tabBar, { backgroundColor: colors.card, borderTopColor: colors.border }],
           tabBarLabelStyle: styles.tabBarLabel,
           tabBarIcon: ({ color, size, focused }) => {
-            if (route.name === t('nav.myCard')) return <User color={color} size={size} />;
-            if (route.name === t('nav.scan')) return <ScanTabIcon focused={focused} colors={colors} isDark={isDark} />;
-            if (route.name === t('nav.about')) return <Info color={color} size={size} />;
-            if (route.name === t('nav.settings')) return <Settings color={color} size={size} />;
+            if (route.name === 'MyCardTab') return <User color={color} size={size} />;
+            if (route.name === 'ScanTab') return <ScanTabIcon focused={focused} colors={colors} isDark={isDark} />;
+            if (route.name === 'AboutTab') return <Info color={color} size={size} />;
+            if (route.name === 'SettingsTab') return <Settings color={color} size={size} />;
+            return null;
           },
         })}
       >
-        <Tab.Screen name={t('nav.myCard')} component={MyCardScreen} />
+        <Tab.Screen
+          name="MyCardTab"
+          component={MyCardScreen}
+          options={{ tabBarLabel: t('nav.myCard') }}
+        />
         <Tab.Screen 
-          name={t('nav.scan')} 
+          name="ScanTab"
           component={ScanScreen} 
           options={{ tabBarLabel: () => null }}
         />
-        <Tab.Screen name={t('nav.about')} component={AboutScreen} />
-        <Tab.Screen name={t('nav.settings')} component={SettingsStack} />
+        <Tab.Screen
+          name="AboutTab"
+          component={AboutScreen}
+          options={{ tabBarLabel: t('nav.about') }}
+        />
+        <Tab.Screen
+          name="SettingsTab"
+          component={SettingsStack}
+          options={{ tabBarLabel: t('nav.settings') }}
+        />
       </Tab.Navigator>
       <QuickTourModal visible={showTour} onFinish={async () => { setShowTour(false); await completeQuickTour(); }} />
     </>
