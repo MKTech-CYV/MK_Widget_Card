@@ -9,6 +9,7 @@ import ScanScreen from '../screens/ScanScreen';
 import AboutScreen from '../screens/AboutScreen';
 import AccountScreen from '../screens/AccountScreen';
 import AppSettingsScreen from '../screens/AppSettingsScreen';
+import AccountPresetsScreen from '../screens/AccountPresetsScreen';
 import { TermsScreen } from '../screens/SettingsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AuthScreen from '../screens/AuthScreen';
@@ -38,6 +39,7 @@ function AccountStack() {
       <Stack.Screen name="AccountMain" component={AccountScreen} />
       <Stack.Screen name="AccountDetail" component={AuthScreen} />
       <Stack.Screen name="AccountSettings" component={AppSettingsScreen} />
+      <Stack.Screen name="AccountPresets" component={AccountPresetsScreen} />
       <Stack.Screen name="SystemNotifications" component={NotificationsScreen} initialParams={{ type: 'system' }} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Terms" component={TermsScreen} />

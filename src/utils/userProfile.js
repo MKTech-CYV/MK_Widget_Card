@@ -18,7 +18,7 @@ const makeInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-export const getUserProfile = (user) => {
+export const getUserProfile = (user, accountProfile = null) => {
   const metadata = user?.user_metadata || {};
   const identityData = getIdentityData(user);
   const email = cleanText(user?.email || metadata.email || identityData.email);
@@ -31,6 +31,8 @@ export const getUserProfile = (user) => {
     identityData.display_name
   ) || cleanText(email.split('@')[0]) || 'MK eCard';
   const avatarUrl = cleanText(
+    accountProfile?.avatar_url ||
+    accountProfile?.avatarUrl ||
     metadata.avatar_url ||
     metadata.picture ||
     identityData.avatar_url ||
@@ -42,6 +44,8 @@ export const getUserProfile = (user) => {
     displayName,
     email,
     avatarUrl,
+    isPremium: Boolean(accountProfile?.is_premium),
+    premiumExpiredAt: accountProfile?.premium_expired_at || null,
     initials: makeInitials(displayName, email),
     provider,
     shortId: user?.id ? `${user.id.slice(0, 8)}...${user.id.slice(-6)}` : '',

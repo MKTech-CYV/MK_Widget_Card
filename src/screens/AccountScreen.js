@@ -14,17 +14,10 @@ export default function AccountScreen({ navigation }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
-  const { user, isAuthReady, refreshSession } = useAuth();
+  const { user, accountProfile, isAuthReady, refreshSession } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const t = (key) => getTranslation(language, key);
-  const profile = getUserProfile(user);
-
-  const openMyCardEditor = useCallback((editSection) => {
-    navigation.getParent()?.navigate('MyCardTab', {
-      editSection,
-      editRequestId: Date.now(),
-    });
-  }, [navigation]);
+  const profile = getUserProfile(user, accountProfile);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -56,21 +49,25 @@ export default function AccountScreen({ navigation }) {
           onPress={() => navigation.navigate('AccountDetail')}
         />
 
-        <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.quickActions')}</Text>
-          <SettingItem
-            icon={<UserIcon size={22} color={colors.primary} />}
-            label={t('settings.editECardInfo')}
-            onPress={() => openMyCardEditor('ecard')}
-            colors={colors}
-          />
-          <SettingItem
-            icon={<Landmark size={22} color={colors.primary} />}
-            label={t('settings.editBankInfo')}
-            onPress={() => openMyCardEditor('bank')}
-            colors={colors}
-          />
-        </View>
+        {user && (
+          <View style={[styles.section, { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('accountPresets.sectionTitle')}</Text>
+            <SettingItem
+              icon={<UserIcon size={22} color={colors.primary} />}
+              label={t('accountPresets.ecardList')}
+              subtitle={t('accountPresets.ecardListDesc')}
+              onPress={() => navigation.navigate('AccountPresets', { kind: 'ecard' })}
+              colors={colors}
+            />
+            <SettingItem
+              icon={<Landmark size={22} color={colors.primary} />}
+              label={t('accountPresets.bankList')}
+              subtitle={t('accountPresets.bankListDesc')}
+              onPress={() => navigation.navigate('AccountPresets', { kind: 'bank' })}
+              colors={colors}
+            />
+          </View>
+        )}
 
         <View style={[styles.section, { backgroundColor: colors.card }]}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.preferencesSection')}</Text>

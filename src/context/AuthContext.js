@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { Linking } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
+import { StorageService } from '../services/StorageService';
+import { fetchProfile } from '../services/ProfileService';
 
 const AuthContext = createContext(null);
 const AUTH_CALLBACK_PATH = 'auth/callback';
@@ -37,12 +39,46 @@ const getUrlParams = (url = '') => {
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
+  const [accountProfile, setAccountProfile] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+
+  const cacheAccountProfile = async (profile) => {
+    const userId = profile?.id || user?.id;
+    if (!userId) return null;
+
+    StorageService.init();
+    await StorageService.setCachedProfile(userId, profile);
+    setAccountProfile(profile || null);
+    return profile || null;
+  };
+
+  const refreshProfile = async (targetUser = user) => {
+    if (!targetUser?.id || !isSupabaseConfigured) {
+      setAccountProfile(null);
+      return null;
+    }
+
+    StorageService.init();
+    const cached = await StorageService.getCachedProfile(targetUser.id).catch(() => null);
+    if (cached) {
+      setAccountProfile(cached);
+    }
+
+    const remoteProfile = await fetchProfile(targetUser.id).catch(() => null);
+    if (remoteProfile) {
+      await StorageService.setCachedProfile(targetUser.id, remoteProfile);
+      setAccountProfile(remoteProfile);
+      return remoteProfile;
+    }
+
+    return cached;
+  };
 
   const refreshSession = async () => {
     if (!isSupabaseConfigured) {
       setSession(null);
       setUser(null);
+      setAccountProfile(null);
       setIsAuthReady(true);
       return null;
     }
@@ -52,6 +88,7 @@ export const AuthProvider = ({ children }) => {
 
     setSession(data.session || null);
     setUser(data.session?.user || null);
+    await refreshProfile(data.session?.user || null);
     setIsAuthReady(true);
 
     return data.session || null;
@@ -86,6 +123,7 @@ export const AuthProvider = ({ children }) => {
     const loadSession = async () => {
       if (!isSupabaseConfigured) {
         if (isMounted) {
+          setAccountProfile(null);
           setIsAuthReady(true);
         }
         return;
@@ -96,6 +134,7 @@ export const AuthProvider = ({ children }) => {
 
       setSession(data.session || null);
       setUser(data.session?.user || null);
+      await refreshProfile(data.session?.user || null);
       setIsAuthReady(true);
     };
 
@@ -103,6 +142,11 @@ export const AuthProvider = ({ children }) => {
       ? supabase.auth.onAuthStateChange((_event, nextSession) => {
         setSession(nextSession || null);
         setUser(nextSession?.user || null);
+        if (nextSession?.user) {
+          refreshProfile(nextSession.user).catch(() => {});
+        } else {
+          setAccountProfile(null);
+        }
       }).data.subscription
       : null;
 
@@ -184,6 +228,7 @@ export const AuthProvider = ({ children }) => {
   const value = useMemo(() => ({
     session,
     user,
+    accountProfile,
     isAuthReady,
     isSupabaseConfigured,
     authRedirectUrl,
@@ -191,8 +236,10 @@ export const AuthProvider = ({ children }) => {
     signUpWithPassword,
     signInWithGoogle,
     refreshSession,
+    refreshProfile,
+    cacheAccountProfile,
     signOut,
-  }), [session, user, isAuthReady]);
+  }), [session, user, accountProfile, isAuthReady]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
