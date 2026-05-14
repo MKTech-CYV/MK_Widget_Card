@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Bell, ExternalLink, Trash2, X } from 'lucide-react-native';
+import { ActivityIndicator, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Bell, ExternalLink, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, Spacing } from '../constants/Theme';
 import Footer from '../components/Footer';
@@ -27,7 +27,6 @@ export default function NotificationsScreen({ route }) {
   const isSystemType = notificationType === 'system';
 
   const [items, setItems] = useState([]);
-  const [localCount, setLocalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
@@ -60,7 +59,6 @@ export default function NotificationsScreen({ route }) {
         return new Date(bDate).getTime() - new Date(aDate).getTime();
       });
 
-      setLocalCount(localItems.length);
       setItems(merged);
     } finally {
       setLoading(false);
@@ -71,20 +69,6 @@ export default function NotificationsScreen({ route }) {
   useEffect(() => {
     load();
   }, [load]);
-
-  const handleClear = async () => {
-    Alert.alert(
-      t('notifications.clearTitle'),
-      t('notifications.clearDesc'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('notifications.clearAction'), style: 'destructive', onPress: async () => {
-          await StorageService.clearNotifications();
-          await load();
-        }},
-      ]
-    );
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -105,15 +89,6 @@ export default function NotificationsScreen({ route }) {
           <Text style={[styles.screenTitle, { color: colors.text }]}>
             {isSystemType ? t('notifications.systemTitle') : t('notifications.title')}
           </Text>
-          {!isSystemType && (
-            <TouchableOpacity
-              style={[styles.clearButton, { backgroundColor: colors.card }]}
-              onPress={handleClear}
-              disabled={!localCount}
-            >
-              <Trash2 size={18} color={localCount ? colors.primary : colors.border} />
-            </TouchableOpacity>
-          )}
         </View>
 
         {loading ? (
@@ -215,7 +190,6 @@ const styles = StyleSheet.create({
   scrollContent: { padding: Spacing.lg },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.lg },
   screenTitle: { fontSize: 32, fontWeight: '800' },
-  clearButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 
   emptyCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
   emptyTitle: { marginTop: 12, fontSize: 16, fontWeight: '800' },

@@ -26,6 +26,17 @@ export const StorageService = {
     return data ? JSON.parse(data) : null;
   },
 
+  setCachedProfile: async (userId, profile) => {
+    if (!userId) return;
+    await DefaultPreference.set(`profile:${userId}`, JSON.stringify(profile || null));
+  },
+
+  getCachedProfile: async (userId) => {
+    if (!userId) return null;
+    const data = await DefaultPreference.get(`profile:${userId}`);
+    return data ? JSON.parse(data) : null;
+  },
+
   setAppPreferences: async (data) => {
     await DefaultPreference.set('appPreferences', JSON.stringify(data));
   },

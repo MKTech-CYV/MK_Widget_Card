@@ -12,7 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Globe2, LogIn, LogOut, Mail, ShieldCheck, UserPlus } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Camera, Globe2, LogIn, LogOut, Mail, ShieldCheck, UserPlus } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileAvatar from '../components/ProfileAvatar';
 import { useTheme, Spacing } from '../constants/Theme';
@@ -20,6 +21,8 @@ import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
 import { getUserProfile } from '../utils/userProfile';
+import { uploadImageToBucket } from '../services/SupabaseStorageService';
+import { updateProfileAvatar } from '../services/ProfileService';
 
 const formatAccountDate = (value) => {
   if (!value) return '';
@@ -35,6 +38,7 @@ export default function AuthScreen() {
   const t = (key) => getTranslation(language, key);
   const {
     user,
+    accountProfile,
     isAuthReady,
     isSupabaseConfigured,
     authRedirectUrl,
@@ -42,6 +46,7 @@ export default function AuthScreen() {
     signUpWithPassword,
     signInWithGoogle,
     refreshSession,
+    cacheAccountProfile,
     signOut,
   } = useAuth();
   const [mode, setMode] = useState('signin');
@@ -49,10 +54,11 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const profile = getUserProfile(user);
+  const profile = getUserProfile(user, accountProfile);
   const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
   const createdAt = formatAccountDate(user?.created_at);
   const lastSignInAt = formatAccountDate(user?.last_sign_in_at);
+  const premiumExpiredAt = formatAccountDate(profile.premiumExpiredAt);
 
   const runAuthAction = async (action, fn) => {
     setLoadingAction(action);
@@ -93,6 +99,35 @@ export default function AuthScreen() {
     }
   };
 
+  const handleAvatarUpload = () => runAuthAction('avatar', async () => {
+    if (!user?.id) return;
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(t('common.error'), t('auth.avatarPermissionDenied'));
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.72,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const upload = await uploadImageToBucket({
+      bucket: 'avatars',
+      userId: user.id,
+      asset: result.assets[0],
+      prefix: 'avatar',
+    });
+    const nextProfile = await updateProfileAvatar(user.id, upload.publicUrl);
+    await cacheAccountProfile(nextProfile);
+  });
+
   if (!isAuthReady) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
@@ -119,6 +154,19 @@ export default function AuthScreen() {
         <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
           <View style={styles.profileHeader}>
             <ProfileAvatar profile={profile} colors={colors} size={86} />
+            <TouchableOpacity
+              style={[styles.avatarEditButton, { backgroundColor: colors.primary }]}
+              onPress={handleAvatarUpload}
+              disabled={Boolean(loadingAction)}
+              accessibilityRole="button"
+              accessibilityLabel={t('auth.updateAvatar')}
+            >
+              {loadingAction === 'avatar' ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Camera color="#fff" size={16} />
+              )}
+            </TouchableOpacity>
           </View>
 
           <Text style={[styles.accountTitle, { color: colors.text }]} numberOfLines={2}>
@@ -173,6 +221,24 @@ export default function AuthScreen() {
                 </Text>
                 <Text style={[styles.detailValue, { color: colors.text }]} numberOfLines={1}>
                   {lastSignInAt}
+                </Text>
+              </View>
+            )}
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                {t('auth.premiumStatus')}
+              </Text>
+              <Text style={[styles.detailValue, { color: profile.isPremium ? colors.success : colors.text }]} numberOfLines={1}>
+                {profile.isPremium ? t('auth.premiumActive') : t('auth.premiumInactive')}
+              </Text>
+            </View>
+            {!!premiumExpiredAt && (
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
+                  {t('auth.premiumExpiredAt')}
+                </Text>
+                <Text style={[styles.detailValue, { color: colors.text }]} numberOfLines={1}>
+                  {premiumExpiredAt}
                 </Text>
               </View>
             )}
@@ -302,9 +368,6 @@ export default function AuthScreen() {
             <Text style={[styles.googleButtonText, { color: colors.text }]}>{t('auth.continueWithGoogle')}</Text>
           </TouchableOpacity>
 
-          <Text style={[styles.redirectHint, { color: colors.textSecondary }]}>
-            {t('auth.redirectHint')}: {authRedirectUrl}
-          </Text>
         </View>
 
       </ScrollView>
@@ -327,7 +390,8 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 4,
   },
-  profileHeader: { alignItems: 'center', marginBottom: Spacing.lg },
+  profileHeader: { alignItems: 'center', marginBottom: Spacing.lg, position: 'relative' },
+  avatarEditButton: { position: 'absolute', right: -4, bottom: -4, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
   segmentedControl: { flexDirection: 'row', padding: 5, borderRadius: 15, marginBottom: Spacing.lg, backgroundColor: 'rgba(142,142,147,0.12)' },
   segment: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 12 },
   segmentText: { fontSize: 14, fontWeight: '800' },

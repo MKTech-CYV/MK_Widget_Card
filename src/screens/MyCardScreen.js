@@ -40,7 +40,19 @@ import { useTheme, Spacing } from '../constants/Theme';
 import { StorageService } from '../services/StorageService';
 import Footer from '../components/Footer';
 import { useAppPreferences } from '../context/AppPreferencesContext';
+import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
+import {
+  bankQrToPresetPayload,
+  ecardToPresetPayload,
+  fetchBankQrPresets,
+  fetchECardPresets,
+  saveBankQrPreset,
+  saveECardPreset,
+  updateBankQrPreset,
+  updateECardPreset
+} from '../services/AccountPresetService';
+import { uploadImageToBucket } from '../services/SupabaseStorageService';
 import {
   buildVCard,
   formatInternationalPhone,
@@ -96,7 +108,8 @@ const DEFAULT_ECARD_FORM = {
 
 const DEFAULT_BANK_FORM = {
   bankName: 'MB',
-  bankAccount: ''
+  bankAccount: '',
+  bankAccountHolderName: ''
 };
 
 const trimText = (value) => `${value || ''}`.trim();
@@ -125,7 +138,8 @@ const toECardForm = (data = {}) => {
 const toBankForm = (data = {}) => ({
   ...DEFAULT_BANK_FORM,
   bankName: data.bankName || 'MB',
-  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, '')
+  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, ''),
+  bankAccountHolderName: data.bankAccountHolderName || data.fullName || ''
 });
 
 const sanitizeECardForm = (data) => ({
@@ -152,7 +166,8 @@ const sanitizeECardForm = (data) => ({
 
 const sanitizeBankForm = (data) => ({
   bankName: data.bankName || 'MB',
-  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, '')
+  bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, ''),
+  bankAccountHolderName: trimText(data.bankAccountHolderName)
 });
 
 const mergeStoredData = (currentData, ecardForm, bankForm) => ({
@@ -167,6 +182,7 @@ export default function MyCardScreen({ route }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
+  const { user } = useAuth();
   const t = (key) => getTranslation(language, key);
   const [userData, setUserData] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
@@ -179,6 +195,13 @@ export default function MyCardScreen({ route }) {
   const [bankQrFailed, setBankQrFailed] = useState(false);
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
+  const [savingDestination, setSavingDestination] = useState(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [showPresetUpdatePicker, setShowPresetUpdatePicker] = useState(false);
+  const [presetUpdateKind, setPresetUpdateKind] = useState(null);
+  const [presetUpdateItems, setPresetUpdateItems] = useState([]);
+  const [pendingPresetData, setPendingPresetData] = useState(null);
+  const [presetUpdateActionId, setPresetUpdateActionId] = useState(null);
   const [searchQuery, setSearchBarQuery] = useState('');
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
@@ -196,6 +219,12 @@ export default function MyCardScreen({ route }) {
       setEditingSection(requestedSection);
     }
   }, [route?.params?.editSection, route?.params?.editRequestId]);
+
+  useEffect(() => {
+    if (route?.params?.refreshRequestId) {
+      loadData();
+    }
+  }, [route?.params?.refreshRequestId]);
 
   const fetchBanks = async () => {
     setLoadingBanks(true);
@@ -245,11 +274,136 @@ export default function MyCardScreen({ route }) {
 
     if (!result.canceled && result.assets?.length) {
       const asset = result.assets[0];
-      const avatar = asset.base64
+      const localAvatar = asset.base64
         ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
         : asset.uri;
 
-      setECardForm(current => ({ ...current, avatar }));
+      setECardForm(current => ({ ...current, avatar: localAvatar, avatarUrl: '' }));
+
+      if (user?.id) {
+        setAvatarUploading(true);
+        try {
+          const upload = await uploadImageToBucket({
+            bucket: 'ecards',
+            userId: user.id,
+            asset,
+            prefix: 'ecard-avatar',
+          });
+          setECardForm(current => ({
+            ...current,
+            avatar: upload.publicUrl,
+            avatarUrl: upload.publicUrl,
+          }));
+        } catch (error) {
+          Alert.alert(t('common.error'), error?.message || t('myCard.imageUploadFailed'));
+        } finally {
+          setAvatarUploading(false);
+        }
+      }
+    }
+  };
+
+  const ensureECardAvatarUploaded = async (data) => {
+    const avatar = `${data?.avatar || ''}`.trim();
+    const avatarUrl = `${data?.avatarUrl || ''}`.trim();
+
+    if (!user?.id || !avatar) {
+      return data;
+    }
+
+    if (avatarUrl && !avatar.startsWith('data:')) {
+      return { ...data, avatar: avatarUrl, avatarUrl };
+    }
+
+    if (!avatar.startsWith('data:')) {
+      return { ...data, avatarUrl: avatarUrl || avatar };
+    }
+
+    const upload = await uploadImageToBucket({
+      bucket: 'ecards',
+      userId: user.id,
+      dataUri: avatar,
+      prefix: 'ecard-avatar',
+    });
+
+    return {
+      ...data,
+      avatar: upload.publicUrl,
+      avatarUrl: upload.publicUrl,
+    };
+  };
+
+  const buildPresetUpdatePayload = (kind, data) => {
+    const rawPayload = kind === 'bank'
+      ? bankQrToPresetPayload({ userId: user.id, data, bankDisplayName: getBankName(data.bankName) })
+      : ecardToPresetPayload({ userId: user.id, data });
+    const { user_id: _userId, ...payload } = rawPayload;
+    return payload;
+  };
+
+  const openPresetUpdatePicker = async (kind, nextData) => {
+    if (!user?.id) return;
+
+    setSavingDestination('preset');
+    try {
+      const presets = kind === 'bank'
+        ? await fetchBankQrPresets()
+        : await fetchECardPresets();
+
+      if (!presets.length) {
+        Alert.alert(t('common.error'), t('myCard.noSavedPresetToUpdate'));
+        return;
+      }
+
+      setPresetUpdateKind(kind);
+      setPendingPresetData(nextData);
+      setPresetUpdateItems(presets);
+      setShowPresetUpdatePicker(true);
+    } catch (error) {
+      Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
+    } finally {
+      setSavingDestination(null);
+    }
+  };
+
+  const closePresetUpdatePicker = () => {
+    if (presetUpdateActionId) return;
+
+    setShowPresetUpdatePicker(false);
+    setPresetUpdateKind(null);
+    setPendingPresetData(null);
+    setPresetUpdateItems([]);
+  };
+
+  const handleUpdateExistingPreset = async (preset) => {
+    if (!user?.id || !pendingPresetData || !presetUpdateKind) return;
+
+    setPresetUpdateActionId(preset.id);
+    try {
+      let nextData = pendingPresetData;
+      if (presetUpdateKind === 'ecard') {
+        nextData = await ensureECardAvatarUploaded(nextData);
+      }
+
+      const payload = buildPresetUpdatePayload(presetUpdateKind, nextData);
+      if (presetUpdateKind === 'bank') {
+        await updateBankQrPreset(preset.id, payload);
+      } else {
+        await updateECardPreset(preset.id, payload);
+      }
+
+      setShowPresetUpdatePicker(false);
+      setPresetUpdateKind(null);
+      setPendingPresetData(null);
+      setPresetUpdateItems([]);
+      await persistData(
+        nextData,
+        presetUpdateKind === 'bank' ? t('myCard.bankPresetUpdateSuccess') : t('myCard.ecardPresetUpdateSuccess')
+      );
+    } catch (error) {
+      Alert.alert(t('common.error'), error?.message || t('myCard.updatePresetFailed'));
+    } finally {
+      setPresetUpdateActionId(null);
     }
   };
 
@@ -266,7 +420,7 @@ export default function MyCardScreen({ route }) {
     }
   };
 
-  const handleSaveECard = async () => {
+  const handleSaveECard = async (destination = 'local') => {
     const sanitizedECard = sanitizeECardForm(ecardForm);
     if (!sanitizedECard.fullName) {
       Alert.alert(t('common.error'), t('myCard.nameRequired'));
@@ -274,14 +428,60 @@ export default function MyCardScreen({ route }) {
     }
 
     const sanitizedBank = sanitizeBankForm(bankForm);
-    const nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
+    let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
+
+    if (destination === 'preset' && user?.id) {
+      await openPresetUpdatePicker('ecard', nextData);
+      return;
+    }
+
+    if (destination === 'account' && user?.id) {
+      setSavingDestination('account');
+      try {
+        nextData = await ensureECardAvatarUploaded(nextData);
+        await saveECardPreset({ userId: user.id, data: nextData });
+        await persistData(nextData, t('myCard.ecardAccountSaveSuccess'));
+      } catch (error) {
+        Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
+      } finally {
+        setSavingDestination(null);
+      }
+      return;
+    }
+
     await persistData(nextData, t('myCard.ecardSaveSuccess'));
   };
 
-  const handleSaveBank = async () => {
+  const handleSaveBank = async (destination = 'local') => {
     const sanitizedECard = sanitizeECardForm(ecardForm);
     const sanitizedBank = sanitizeBankForm(bankForm);
-    const nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
+    let nextData = mergeStoredData(userData, sanitizedECard, {
+      ...sanitizedBank,
+      bankAccountHolderName: sanitizedECard.fullName
+    });
+
+    if (destination === 'preset' && user?.id) {
+      await openPresetUpdatePicker('bank', nextData);
+      return;
+    }
+
+    if (destination === 'account' && user?.id) {
+      setSavingDestination('account');
+      try {
+        await saveBankQrPreset({
+          userId: user.id,
+          data: nextData,
+          bankDisplayName: getBankName(nextData.bankName),
+        });
+        await persistData(nextData, t('myCard.bankAccountSaveSuccess'));
+      } catch (error) {
+        Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
+      } finally {
+        setSavingDestination(null);
+      }
+      return;
+    }
+
     await persistData(nextData, t('myCard.bankSaveSuccess'));
   };
 
@@ -291,7 +491,7 @@ export default function MyCardScreen({ route }) {
   };
 
   const bankQrUrl = userData?.bankName && userData?.bankAccount
-    ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.fullName || '')}`
+    ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.bankAccountHolderName || userData.fullName || '')}`
     : null;
 
   const vCardContent = userData ? buildVCard(userData) : '';
@@ -411,7 +611,7 @@ export default function MyCardScreen({ route }) {
           </View>
         )}
         <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-          <Camera color="#fff" size={14} />
+          {avatarUploading ? <ActivityIndicator color="#fff" /> : <Camera color="#fff" size={14} />}
         </View>
       </TouchableOpacity>
 
@@ -436,7 +636,6 @@ export default function MyCardScreen({ route }) {
       <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.contactSection')}</Text>
       <InputField label={t('myCard.website')} value={ecardForm.website} onChange={v => setECardForm({ ...ecardForm, website: v })} placeholder={t('myCard.websitePlaceholder')} keyboardType="url" autoCapitalize="none" colors={colors} />
       <InputField label={t('myCard.address')} value={ecardForm.address} onChange={v => setECardForm({ ...ecardForm, address: v })} placeholder={t('myCard.addressPlaceholder')} colors={colors} multiline />
-      <InputField label={t('myCard.avatarUrl')} value={ecardForm.avatarUrl} onChange={v => setECardForm({ ...ecardForm, avatarUrl: v })} placeholder={t('myCard.avatarUrlPlaceholder')} keyboardType="url" autoCapitalize="none" colors={colors} />
 
       <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.socialSection')}</Text>
       <InputField label={t('myCard.linkedin')} value={ecardForm.linkedin} onChange={v => setECardForm({ ...ecardForm, linkedin: v })} placeholder={t('myCard.linkedinPlaceholder')} autoCapitalize="none" colors={colors} />
@@ -619,13 +818,37 @@ export default function MyCardScreen({ route }) {
           title={t('myCard.confirmSaveTitle')}
           message={confirmMessage}
           confirmLabel={saveLabel}
+          localLabel={t('myCard.saveLocal')}
+          accountLabel={t('myCard.saveAccount')}
+          updatePresetLabel={t('myCard.updateSavedPreset')}
+          canSaveToAccount={Boolean(user?.id)}
+          canUpdatePreset={Boolean(user?.id)}
+          savingAction={savingDestination}
           cancelLabel={t('common.cancel')}
           colors={colors}
           onCancel={() => setShowSaveConfirm(false)}
           onConfirm={() => {
             setShowSaveConfirm(false);
-            onSave();
+            onSave('local');
           }}
+          onConfirmAccount={() => {
+            setShowSaveConfirm(false);
+            onSave('account');
+          }}
+          onConfirmUpdate={() => {
+            setShowSaveConfirm(false);
+            onSave('preset');
+          }}
+        />
+        <PresetUpdateModal
+          visible={showPresetUpdatePicker}
+          isBank={presetUpdateKind === 'bank'}
+          items={presetUpdateItems}
+          loadingId={presetUpdateActionId}
+          colors={colors}
+          t={t}
+          onClose={closePresetUpdatePicker}
+          onSelect={handleUpdateExistingPreset}
         />
         <SelectionModal
           visible={showCountryModal}
@@ -775,7 +998,7 @@ export default function MyCardScreen({ route }) {
                   </View>
 
                   <View style={styles.bankInfoPanel}>
-                    <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.fullName}</Text>
+                    <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.bankAccountHolderName || userData.fullName}</Text>
                     <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{getBankName(userData.bankName)}</Text>
                     <Text style={[styles.bankAccountText, { color: colors.primary }]}>{userData.bankAccount}</Text>
                   </View>
@@ -878,24 +1101,135 @@ const PreviewDetail = ({ icon: Icon, label, value, colors }) => {
   );
 };
 
-const SaveConfirmModal = ({ visible, title, message, confirmLabel, cancelLabel, colors, onCancel, onConfirm }) => (
-  <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
-    <View style={styles.confirmOverlay}>
-      <View style={[styles.confirmCard, { backgroundColor: colors.card }]}>
-        <View style={[styles.confirmIcon, { backgroundColor: `${colors.primary}16` }]}>
-          <Save color={colors.primary} size={24} />
+const SaveConfirmModal = ({
+  visible,
+  title,
+  message,
+  confirmLabel,
+  localLabel,
+  accountLabel,
+  updatePresetLabel,
+  canSaveToAccount,
+  canUpdatePreset,
+  savingAction,
+  cancelLabel,
+  colors,
+  onCancel,
+  onConfirm,
+  onConfirmAccount,
+  onConfirmUpdate
+}) => {
+  const isSaving = Boolean(savingAction);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={styles.confirmOverlay}>
+        <View style={[styles.confirmCard, { backgroundColor: colors.card }]}>
+          <View style={[styles.confirmIcon, { backgroundColor: `${colors.primary}16` }]}>
+            <Save color={colors.primary} size={24} />
+          </View>
+          <Text style={[styles.confirmTitle, { color: colors.text }]}>{title}</Text>
+          <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>{message}</Text>
+          <View style={[styles.confirmActions, canSaveToAccount && styles.confirmActionsStack]}>
+            <TouchableOpacity
+              style={[
+                styles.confirmCancel,
+                { backgroundColor: colors.background },
+                canSaveToAccount && styles.confirmStackButton
+              ]}
+              onPress={onCancel}
+              disabled={isSaving}
+            >
+              <Text style={[styles.confirmCancelText, { color: colors.textSecondary }]}>{cancelLabel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.confirmSave,
+                { backgroundColor: colors.primary },
+                canSaveToAccount && styles.confirmStackButton
+              ]}
+              onPress={onConfirm}
+              disabled={isSaving}
+            >
+              <Save color="#fff" size={18} />
+              <Text style={styles.confirmSaveText}>{canSaveToAccount ? localLabel : confirmLabel}</Text>
+            </TouchableOpacity>
+            {canSaveToAccount && (
+              <TouchableOpacity
+                style={[styles.confirmSave, styles.confirmStackButton, { backgroundColor: colors.success }]}
+                onPress={onConfirmAccount}
+                disabled={isSaving}
+              >
+                {savingAction === 'account' ? <ActivityIndicator color="#fff" /> : <Save color="#fff" size={18} />}
+                <Text style={styles.confirmSaveText}>{accountLabel}</Text>
+              </TouchableOpacity>
+            )}
+            {canUpdatePreset && (
+              <TouchableOpacity
+                style={[styles.confirmSave, styles.confirmStackButton, { backgroundColor: colors.text }]}
+                onPress={onConfirmUpdate}
+                disabled={isSaving}
+              >
+                {savingAction === 'preset' ? <ActivityIndicator color="#fff" /> : <Check color="#fff" size={18} />}
+                <Text style={styles.confirmSaveText}>{updatePresetLabel}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-        <Text style={[styles.confirmTitle, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>{message}</Text>
-        <View style={styles.confirmActions}>
-          <TouchableOpacity style={[styles.confirmCancel, { backgroundColor: colors.background }]} onPress={onCancel}>
-            <Text style={[styles.confirmCancelText, { color: colors.textSecondary }]}>{cancelLabel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.confirmSave, { backgroundColor: colors.primary }]} onPress={onConfirm}>
-            <Save color="#fff" size={18} />
-            <Text style={styles.confirmSaveText}>{confirmLabel}</Text>
+      </View>
+    </Modal>
+  );
+};
+
+const PresetUpdateModal = ({ visible, isBank, items, loadingId, colors, t, onClose, onSelect }) => (
+  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <View style={[styles.presetUpdateSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>{t('myCard.updatePresetTitle')}</Text>
+          <TouchableOpacity onPress={onClose} disabled={Boolean(loadingId)}>
+            <X color={colors.textSecondary} size={24} />
           </TouchableOpacity>
         </View>
+        <Text style={[styles.presetUpdateDesc, { color: colors.textSecondary }]}>
+          {t('myCard.updatePresetDesc')}
+        </Text>
+        <FlatList
+          data={items}
+          keyExtractor={item => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.presetUpdateList}
+          renderItem={({ item }) => {
+            const social = item.social || {};
+            const phoneDisplay = isBank
+              ? ''
+              : formatInternationalPhone(item.phone_country_code || social.countryCode || social.country_code || '84', item.phone);
+            const title = item.label || (isBank ? item.bank_name : item.full_name) || (isBank ? t('accountPresets.bankFallback') : t('accountPresets.ecardFallback'));
+            const subtitle = isBank
+              ? [item.bank_name || item.bank_code, item.account_number].filter(Boolean).join(' • ')
+              : [item.job_title, item.company].filter(Boolean).join(' • ');
+            const meta = isBank
+              ? item.account_holder_name
+              : [item.email, phoneDisplay].filter(Boolean).join(' • ');
+
+            return (
+              <TouchableOpacity
+                style={[styles.presetUpdateItem, { backgroundColor: colors.background }]}
+                onPress={() => onSelect(item)}
+                disabled={Boolean(loadingId)}
+              >
+                <View style={styles.presetUpdateBody}>
+                  <Text style={[styles.presetUpdateTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+                  {!!subtitle && <Text style={[styles.presetUpdateMeta, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</Text>}
+                  {!!meta && <Text style={[styles.presetUpdateMeta, { color: colors.textSecondary }]} numberOfLines={1}>{meta}</Text>}
+                </View>
+                <View style={[styles.presetUpdateIcon, { backgroundColor: colors.primary }]}>
+                  {loadingId === item.id ? <ActivityIndicator color="#fff" /> : <Check color="#fff" size={18} />}
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
       </View>
     </View>
   </Modal>
@@ -971,8 +1305,10 @@ const styles = StyleSheet.create({
   confirmTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
   confirmMessage: { fontSize: 14, fontWeight: '600', lineHeight: 20, textAlign: 'center', marginBottom: 20 },
   confirmActions: { flexDirection: 'row', gap: 10, width: '100%' },
+  confirmActionsStack: { flexDirection: 'column' },
   confirmCancel: { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   confirmSave: { flex: 1.25, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
+  confirmStackButton: { flex: 0, minHeight: 50, width: '100%' },
   confirmCancelText: { fontSize: 15, fontWeight: '800' },
   confirmSaveText: { color: '#fff', fontSize: 15, fontWeight: '800', marginLeft: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
@@ -981,6 +1317,14 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: 'bold' },
   modalItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.05)', paddingHorizontal: 10, borderRadius: 10 },
   modalItemText: { fontSize: 15, fontWeight: '600' },
+  presetUpdateSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, maxHeight: '76%' },
+  presetUpdateDesc: { fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: -8, marginBottom: 14 },
+  presetUpdateList: { paddingBottom: 8, gap: 10 },
+  presetUpdateItem: { minHeight: 74, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center' },
+  presetUpdateBody: { flex: 1, minWidth: 0, marginRight: 12 },
+  presetUpdateTitle: { fontSize: 15, fontWeight: '900' },
+  presetUpdateMeta: { marginTop: 4, fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  presetUpdateIcon: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   bankLogoSmall: { width: 40, height: 25, marginRight: 12 },
   countryIconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 15, marginBottom: 15 },
