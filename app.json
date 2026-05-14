@@ -2,6 +2,7 @@
   "expo": {
     "name": "MK Widget Card",
     "slug": "MK_Widget_Card",
+    "scheme": "mkwidgetcard",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

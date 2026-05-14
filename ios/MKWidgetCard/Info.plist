@@ -28,6 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>com.mktech.widgetcard</string>
+          <string>mkwidgetcard</string>
         </array>
       </dict>
     </array>

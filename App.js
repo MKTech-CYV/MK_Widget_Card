@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { ThemeProvider } from './src/constants/Theme';
 import { AppPreferencesProvider } from './src/context/AppPreferencesContext';
+import { AuthProvider } from './src/context/AuthContext';
 
 /**
  * MK eCard - Production Version 2026
@@ -15,10 +16,12 @@ export default function App() {
     <SafeAreaProvider>
       <AppPreferencesProvider>
         <ThemeProvider>
-          <NavigationContainer>
-            <AppNavigator />
-            <StatusBar style="auto" />
-          </NavigationContainer>
+          <AuthProvider>
+            <NavigationContainer>
+              <AppNavigator />
+              <StatusBar style="auto" />
+            </NavigationContainer>
+          </AuthProvider>
         </ThemeProvider>
       </AppPreferencesProvider>
     </SafeAreaProvider>
