@@ -141,7 +141,7 @@ const translations = {
     scan: {
       cameraPermissionTitle: 'Quyền truy cập Camera',
       cameraPermissionDesc: 'Chúng tôi cần quyền truy cập camera để quét mã QR danh thiếp.',
-      allowCamera: 'Cho phép truy cập',
+      allowCamera: 'Tiếp tục',
       cardDetected: 'Đã phát hiện danh thiếp',
       saveContact: 'Lưu danh bạ',
       hint: 'Đưa mã QR vào khung để quét',
@@ -391,7 +391,7 @@ const translations = {
     scan: {
       cameraPermissionTitle: 'Camera access',
       cameraPermissionDesc: 'We need camera access to scan the business card QR code.',
-      allowCamera: 'Allow access',
+      allowCamera: 'Continue',
       cardDetected: 'Business card detected',
       saveContact: 'Save contact',
       hint: 'Place the QR code inside the frame to scan',
