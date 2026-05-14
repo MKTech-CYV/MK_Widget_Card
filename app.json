@@ -40,6 +40,10 @@
         "android.permission.CAMERA",
         "android.permission.READ_CONTACTS",
         "android.permission.WRITE_CONTACTS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -51,6 +55,10 @@
         "projectId": "fb9ff7c0-83bf-4f70-9970-5ef3bdff5300"
       }
     },
-    "owner": "mktechvn"
+    "owner": "mktechvn",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/fb9ff7c0-83bf-4f70-9970-5ef3bdff5300"
+    }
   }
 }
