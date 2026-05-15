@@ -78,7 +78,8 @@ open class MKWidgetProvider : AppWidgetProvider() {
         val avatarUrl: String,
         val countryCode: String,
         val bankCode: String,
-        val bankAccount: String
+        val bankAccount: String,
+        val bankAccountHolderName: String
     )
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -171,8 +172,13 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 )
 
                 if (isMedium) {
+                    val bankTitle = if (hasBankInfo) {
+                        bankUser!!.bankAccountHolderName.ifBlank { "Chưa có tên tài khoản" }
+                    } else {
+                        "Chưa có tài khoản"
+                    }
                     views.setTextViewText(R.id.widget_badge, "VIETQR")
-                    views.setTextViewText(R.id.widget_title, if (hasBankInfo) bankUser?.fullName else "Chưa có tài khoản")
+                    views.setTextViewText(R.id.widget_title, bankTitle)
                     views.setTextViewText(R.id.widget_subtitle, if (hasBankInfo) bankName else "Mở app để cập nhật")
                     views.setTextViewText(R.id.widget_extra, if (hasBankInfo) bankUser?.bankAccount else "")
                 }
@@ -210,7 +216,8 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 avatarUrl = user.optCleanString("avatarUrl"),
                 countryCode = normalizeCountryCode(user.optString("countryCode", "84")),
                 bankCode = normalizeBankCode(user.optCleanString("bankName")),
-                bankAccount = sanitizeBankAccount(user.optString("bankAccount", ""))
+                bankAccount = sanitizeBankAccount(user.optString("bankAccount", "")),
+                bankAccountHolderName = user.optCleanString("bankAccountHolderName")
             )
         } catch (e: Exception) {
             Log.e("MKWidget", "Invalid user data: ${e.message}")
@@ -328,7 +335,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
     }
 
     private fun buildVietQrUrl(user: WidgetUserData): String {
-        val accountName = URLEncoder.encode(user.fullName, "UTF-8").replace("+", "%20")
+        val accountName = URLEncoder.encode(user.bankAccountHolderName, "UTF-8").replace("+", "%20")
         return "https://img.vietqr.io/image/${user.bankCode}-${user.bankAccount}-qr_only.png?accountName=$accountName"
     }
 

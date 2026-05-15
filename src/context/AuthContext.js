@@ -184,20 +184,6 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
   };
 
-  const signUpWithPassword = async ({ email, password }) => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured.');
-    }
-
-    const { data, error } = await supabase.auth.signUp({
-      email: `${email || ''}`.trim(),
-      password,
-    });
-
-    if (error) throw error;
-    return data;
-  };
-
   const signInWithGoogle = async () => {
     if (!isSupabaseConfigured) {
       throw new Error('Supabase is not configured.');
@@ -233,7 +219,6 @@ export const AuthProvider = ({ children }) => {
     isSupabaseConfigured,
     authRedirectUrl,
     signInWithPassword,
-    signUpWithPassword,
     signInWithGoogle,
     refreshSession,
     refreshProfile,

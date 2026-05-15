@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient';
+import { deleteStorageFile, parseStoragePathFromPublicUrl } from './SupabaseStorageService';
 
 export const fetchProfile = async (userId) => {
   if (!isSupabaseConfigured || !userId) return null;
@@ -16,6 +17,7 @@ export const fetchProfile = async (userId) => {
 export const updateProfileAvatar = async (userId, avatarUrl) => {
   if (!isSupabaseConfigured || !userId) return null;
 
+  const previousProfile = await fetchProfile(userId).catch(() => null);
   const { data, error } = await supabase
     .from('profiles')
     .upsert({ id: userId, avatar_url: avatarUrl }, { onConflict: 'id' })
@@ -23,5 +25,11 @@ export const updateProfileAvatar = async (userId, avatarUrl) => {
     .single();
 
   if (error) throw error;
+
+  const previousPath = parseStoragePathFromPublicUrl(previousProfile?.avatar_url);
+  if (previousPath?.bucket === 'avatars' && previousPath.path && previousProfile?.avatar_url !== avatarUrl) {
+    await deleteStorageFile(previousPath).catch(() => null);
+  }
+
   return data;
 };

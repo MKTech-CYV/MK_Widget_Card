@@ -33,6 +33,7 @@ import {
   Phone,
   Save,
   Search,
+  Share2,
   User as UserIcon,
   X
 } from 'lucide-react-native';
@@ -59,6 +60,7 @@ import {
   normalizeCountryCode,
   normalizePhoneForCountry
 } from '../utils/vcard';
+import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
@@ -139,7 +141,7 @@ const toBankForm = (data = {}) => ({
   ...DEFAULT_BANK_FORM,
   bankName: data.bankName || 'MB',
   bankAccount: `${data.bankAccount || ''}`.replace(/[^\d]/g, ''),
-  bankAccountHolderName: data.bankAccountHolderName || data.fullName || ''
+  bankAccountHolderName: data.bankAccountHolderName || ''
 });
 
 const sanitizeECardForm = (data) => ({
@@ -234,8 +236,8 @@ export default function MyCardScreen({ route }) {
       if (result.code === '00') {
         setBanks(result.data);
       }
-    } catch (error) {
-      console.error('Error fetching banks:', error);
+    } catch {
+      setBanks([]);
     } finally {
       setLoadingBanks(false);
     }
@@ -455,10 +457,12 @@ export default function MyCardScreen({ route }) {
   const handleSaveBank = async (destination = 'local') => {
     const sanitizedECard = sanitizeECardForm(ecardForm);
     const sanitizedBank = sanitizeBankForm(bankForm);
-    let nextData = mergeStoredData(userData, sanitizedECard, {
-      ...sanitizedBank,
-      bankAccountHolderName: sanitizedECard.fullName
-    });
+    if (!sanitizedBank.bankAccountHolderName) {
+      Alert.alert(t('common.error'), t('myCard.bankHolderRequired'));
+      return;
+    }
+
+    let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
     if (destination === 'preset' && user?.id) {
       await openPresetUpdatePicker('bank', nextData);
@@ -490,8 +494,34 @@ export default function MyCardScreen({ route }) {
     return bank ? bank.shortName || bank.name : code;
   };
 
+  const shareECard = async () => {
+    if (!userData) return;
+
+    try {
+      const url = buildECardShareUrl(userData, language);
+      await shareUrl({ title: t('myCard.shareECard'), url });
+    } catch (error) {
+      Alert.alert(t('common.error'), t('myCard.shareFailed'));
+    }
+  };
+
+  const shareBankQr = async () => {
+    if (!userData) return;
+
+    try {
+      const url = buildBankQrShareUrl(userData);
+      if (!url) {
+        Alert.alert(t('common.error'), t('myCard.noBankQr'));
+        return;
+      }
+      await shareUrl({ title: t('myCard.shareBankQr'), url });
+    } catch (error) {
+      Alert.alert(t('common.error'), t('myCard.shareBankFailed'));
+    }
+  };
+
   const bankQrUrl = userData?.bankName && userData?.bankAccount
-    ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.bankAccountHolderName || userData.fullName || '')}`
+    ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.bankAccountHolderName || '')}`
     : null;
 
   const vCardContent = userData ? buildVCard(userData) : '';
@@ -680,6 +710,15 @@ export default function MyCardScreen({ route }) {
           <ChevronDown color={colors.textSecondary} size={20} />
         </TouchableOpacity>
       </View>
+
+      <InputField
+        label={t('myCard.bankAccountHolderName')}
+        value={bankForm.bankAccountHolderName}
+        onChange={v => setBankForm({ ...bankForm, bankAccountHolderName: v })}
+        placeholder={t('myCard.bankAccountHolderNamePlaceholder')}
+        autoCapitalize="characters"
+        colors={colors}
+      />
 
       <InputField
         label={t('myCard.account')}
@@ -905,26 +944,44 @@ export default function MyCardScreen({ route }) {
           </View>
 
           <View style={[styles.digitalCard, { backgroundColor: colors.card }]}>
-            <TouchableOpacity
-              style={[styles.cardEditButton, { backgroundColor: colors.background }]}
-              onPress={() => setEditingSection(activeTab === 'bank' ? 'bank' : 'ecard')}
-              accessibilityRole="button"
-              accessibilityLabel={activeTab === 'bank' ? t('myCard.editBankButton') : t('myCard.editECardButton')}
-            >
-              <Edit2 color={colors.primary} size={18} />
-            </TouchableOpacity>
+            <View style={styles.cardTopBar}>
+              {activeTab === 'contact' ? (
+                userData.avatar ? (
+                  <Image source={{ uri: userData.avatar }} style={styles.cardAvatar} />
+                ) : (
+                  <View style={[styles.cardAvatarPlaceholder, { backgroundColor: colors.background }]}>
+                    <UserIcon color={colors.primary} size={40} />
+                  </View>
+                )
+              ) : (
+                <View style={[styles.cardAvatarPlaceholder, { backgroundColor: `${colors.primary}14` }]}>
+                  <Landmark color={colors.primary} size={34} />
+                </View>
+              )}
+              <View style={styles.cardActionRow}>
+                <TouchableOpacity
+                  style={[styles.cardIconButton, { backgroundColor: colors.background }]}
+                  onPress={activeTab === 'bank' ? shareBankQr : shareECard}
+                  accessibilityRole="button"
+                  accessibilityLabel={activeTab === 'bank' ? t('myCard.shareBankQr') : t('myCard.shareECard')}
+                >
+                  <Share2 color={colors.primary} size={18} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cardIconButton, { backgroundColor: colors.background }]}
+                  onPress={() => setEditingSection(activeTab === 'bank' ? 'bank' : 'ecard')}
+                  accessibilityRole="button"
+                  accessibilityLabel={activeTab === 'bank' ? t('myCard.editBankButton') : t('myCard.editECardButton')}
+                >
+                  <Edit2 color={colors.primary} size={18} />
+                </TouchableOpacity>
+              </View>
+            </View>
             {activeTab === 'contact' ? (
               <>
                 <View style={styles.cardHeader}>
-                  {userData.avatar ? (
-                    <Image source={{ uri: userData.avatar }} style={styles.cardAvatar} />
-                  ) : (
-                    <View style={[styles.cardAvatarPlaceholder, { backgroundColor: colors.background }]}>
-                      <UserIcon color={colors.primary} size={40} />
-                    </View>
-                  )}
                   <View style={styles.headerInfo}>
-                    <Text style={[styles.cardName, { color: colors.text }]}>{userData.fullName}</Text>
+                    <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={2}>{userData.fullName}</Text>
                     <Text style={[styles.cardTitle, { color: colors.textSecondary }]}>
                       {[userData.title, userData.company].filter(Boolean).join(' • ')}
                     </Text>
@@ -998,7 +1055,9 @@ export default function MyCardScreen({ route }) {
                   </View>
 
                   <View style={styles.bankInfoPanel}>
-                    <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.bankAccountHolderName || userData.fullName}</Text>
+                    {!!userData.bankAccountHolderName && (
+                      <Text style={[styles.bankOwnerName, { color: colors.text }]} numberOfLines={1}>{userData.bankAccountHolderName}</Text>
+                    )}
                     <Text style={[styles.bankNameText, { color: colors.textSecondary }]}>{getBankName(userData.bankName)}</Text>
                     <Text style={[styles.bankAccountText, { color: colors.primary }]}>{userData.bankAccount}</Text>
                   </View>
@@ -1120,6 +1179,7 @@ const SaveConfirmModal = ({
   onConfirmUpdate
 }) => {
   const isSaving = Boolean(savingAction);
+  const updatePresetButtonColor = colors.secondary || colors.primary;
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
@@ -1166,7 +1226,7 @@ const SaveConfirmModal = ({
             )}
             {canUpdatePreset && (
               <TouchableOpacity
-                style={[styles.confirmSave, styles.confirmStackButton, { backgroundColor: colors.text }]}
+                style={[styles.confirmSave, styles.confirmStackButton, { backgroundColor: updatePresetButtonColor }]}
                 onPress={onConfirmUpdate}
                 disabled={isSaving}
               >
@@ -1263,12 +1323,14 @@ const styles = StyleSheet.create({
   countrySelector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 55, borderRadius: 14, minWidth: 90, justifyContent: 'center' },
   saveFab: { position: 'absolute', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14, elevation: 8 },
   digitalCard: { borderRadius: 32, padding: 25, width: '100%', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 30, elevation: 10, position: 'relative' },
-  cardEditButton: { position: 'absolute', top: 16, right: 16, width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', zIndex: 3, elevation: 4 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingRight: 44 },
+  cardTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  cardActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 14 },
+  cardIconButton: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', zIndex: 3, elevation: 4 },
+  cardHeader: { marginBottom: 20 },
   cardAvatar: { width: 70, height: 70, borderRadius: 20 },
   cardAvatarPlaceholder: { width: 70, height: 70, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  headerInfo: { marginLeft: 15, flex: 1 },
-  cardName: { fontSize: 22, fontWeight: 'bold' },
+  headerInfo: { width: '100%' },
+  cardName: { fontSize: 24, lineHeight: 30, fontWeight: 'bold' },
   cardTitle: { fontSize: 14, marginTop: 2, lineHeight: 20 },
   cardCompany: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginVertical: 15 },
@@ -1285,10 +1347,10 @@ const styles = StyleSheet.create({
   qrLogoImage: { backgroundColor: '#FFF' },
   qrHint: { marginTop: 10, fontSize: 12, color: '#8E8E93', fontWeight: '600' },
   bankView: { alignItems: 'center', width: '100%' },
-  bankHeader: { alignItems: 'center', marginBottom: 14, paddingHorizontal: 42 },
+  bankHeader: { alignItems: 'center', marginBottom: 14, paddingHorizontal: 0 },
   bankBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginBottom: 10 },
   bankBadgeText: { marginLeft: 6, fontSize: 12, fontWeight: '800' },
-  bankTitle: { fontSize: 21, fontWeight: '800' },
+  bankTitle: { fontSize: 21, fontWeight: '800', textAlign: 'center' },
   bankQrContainer: { padding: 8, borderRadius: 24 },
   bankQrFrame: { justifyContent: 'center', alignItems: 'center' },
   bankQrImage: { width: '100%', height: '100%' },

@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient';
+import { getFriendlyErrorMessage } from '../utils/errorParser';
 
 const MIME_EXTENSIONS = {
   'image/jpeg': 'jpg',
@@ -7,6 +8,32 @@ const MIME_EXTENSIONS = {
   'image/webp': 'webp',
   'image/heic': 'heic',
   'image/heif': 'heif',
+};
+
+export const parseStoragePathFromPublicUrl = (publicUrl) => {
+  if (!publicUrl) return null;
+  try {
+    const url = new URL(publicUrl);
+    const match = url.pathname.match(/^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+    if (!match) return null;
+    return { bucket: match[1], path: match[2] };
+  } catch {
+    return null;
+  }
+};
+
+export const deleteStorageFile = async ({ bucket, path }) => {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  if (!bucket || !path) {
+    throw new Error('Missing bucket or path.');
+  }
+
+  const { error } = await supabase.storage.from(bucket).remove([path]);
+  if (error) throw error;
+  return true;
 };
 
 const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -78,13 +105,18 @@ const getUploadBody = async ({ asset, dataUri }) => {
   }
 
   if (asset?.uri) {
-    const response = await fetch(asset.uri);
-    const arrayBuffer = await response.arrayBuffer();
-    return {
-      body: arrayBuffer,
-      contentType,
-      extension: getExtension(contentType, fileName),
-    };
+    try {
+      const response = await fetch(asset.uri);
+      const arrayBuffer = await response.arrayBuffer();
+      return {
+        body: arrayBuffer,
+        contentType,
+        extension: getExtension(contentType, fileName),
+      };
+    } catch (error) {
+      const friendly = getFriendlyErrorMessage(error);
+      throw new Error(friendly || error.message || 'Không thể tải ảnh.');
+    }
   }
 
   throw new Error('No image data to upload.');

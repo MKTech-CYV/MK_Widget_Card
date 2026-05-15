@@ -16,8 +16,8 @@ export const StorageService = {
     // Đồng bộ Widget ngay lập tức trên cả iOS và Android.
     try {
       WidgetUpdater?.reloadAll?.();
-    } catch (error) {
-      console.log('Widget reload failed', error);
+    } catch {
+      // Native widget reload can be unavailable in simulator or unsupported builds.
     }
   },
 

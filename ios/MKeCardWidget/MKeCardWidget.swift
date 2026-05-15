@@ -41,6 +41,7 @@ struct UserData: Codable {
     let avatarUrl: String?
     let bankName: String?
     let bankAccount: String?
+    let bankAccountHolderName: String?
     let countryCode: String?
 }
 
@@ -88,6 +89,7 @@ extension UserData {
         avatarUrl: nil,
         bankName: "MB",
         bankAccount: "0335337802",
+        bankAccountHolderName: "TRAN MINH KHOI",
         countryCode: "84"
     )
     
@@ -183,12 +185,18 @@ extension UserData {
         let value = (bankName ?? "MB").trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "MB" : value
     }
+
+    var bankAccountHolderDisplayName: String {
+        let value = (bankAccountHolderName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "Chưa có tên tài khoản" : value
+    }
     
     var bankQrUrl: String? {
         let account = (bankAccount ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !account.isEmpty else { return nil }
         
-        let encodedName = fullName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let accountName = (bankAccountHolderName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let encodedName = accountName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         return "https://img.vietqr.io/image/\(bankDisplayName)-\(account)-qr_only.png?accountName=\(encodedName)"
     }
 }
@@ -415,7 +423,7 @@ struct BankMediumView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     WidgetBadge(text: "VIETQR")
 
-                    Text(user?.fullName.isEmpty == false ? user?.fullName ?? "" : "Chưa có tài khoản")
+                    Text(user?.hasBankInfo == true ? user?.bankAccountHolderDisplayName ?? "" : "Chưa có tài khoản")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(WidgetColors.text)
                         .lineLimit(1)

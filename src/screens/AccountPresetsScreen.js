@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
-import { Camera, Check, ChevronDown, CreditCard, Globe, Pencil, Save, Search, Trash2, User as UserIcon, X } from 'lucide-react-native';
+import { Camera, Check, ChevronDown, CreditCard, Globe, Pencil, Save, Search, Share2, Trash2, User as UserIcon, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Footer from '../components/Footer';
 import { useTheme, Spacing } from '../constants/Theme';
@@ -25,6 +25,7 @@ import {
 } from '../services/AccountPresetService';
 import { uploadImageToBucket } from '../services/SupabaseStorageService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
+import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -221,6 +222,28 @@ export default function AccountPresetsScreen({ navigation, route }) {
     }
   };
 
+  const handleShareECard = async (item) => {
+    try {
+      const url = buildECardShareUrl(item, language);
+      await shareUrl({ title: t('myCard.shareECard'), url });
+    } catch (error) {
+      Alert.alert(t('common.error'), t('myCard.shareFailed'));
+    }
+  };
+
+  const handleShareBankQr = async (item) => {
+    try {
+      const url = buildBankQrShareUrl(item);
+      if (!url) {
+        Alert.alert(t('common.error'), t('myCard.noBankQr'));
+        return;
+      }
+      await shareUrl({ title: t('myCard.shareBankQr'), url });
+    } catch (error) {
+      Alert.alert(t('common.error'), t('myCard.shareBankFailed'));
+    }
+  };
+
   const handleDelete = (item) => {
     Alert.alert(
       t('accountPresets.deleteTitle'),
@@ -257,6 +280,10 @@ export default function AccountPresetsScreen({ navigation, route }) {
 
   const handleSaveEdit = async () => {
     if (!editingItem) return;
+    if (isBank && !compactText(editForm.account_holder_name)) {
+      Alert.alert(t('common.error'), t('myCard.bankHolderRequired'));
+      return;
+    }
 
     setSavingEdit(true);
     try {
@@ -330,6 +357,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
                 colors={colors}
                 t={t}
                 onApply={() => handleApply(item)}
+                onShare={() => (isBank ? handleShareBankQr(item) : handleShareECard(item))}
                 onEdit={() => handleStartEdit(item)}
                 onDelete={() => handleDelete(item)}
               />
@@ -359,7 +387,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
   );
 }
 
-const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onEdit, onDelete }) => {
+const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onShare, onEdit, onDelete }) => {
   const social = item.social || {};
   const phoneDisplay = !isBank
     ? formatInternationalPhone(item.phone_country_code || social.countryCode || social.country_code || '84', item.phone)
@@ -377,7 +405,7 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onEdi
 
   return (
     <View style={[styles.presetCard, { backgroundColor: colors.card }]}>
-      <View style={styles.presetMain}>
+      <View style={styles.presetTopBar}>
         <View style={[styles.iconBox, { backgroundColor: `${colors.primary}14` }]}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.presetAvatar} />
@@ -385,20 +413,43 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onEdi
             <Icon color={colors.primary} size={22} />
           )}
         </View>
-        <View style={styles.presetBody}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.presetTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
-            {selected && (
-              <View style={[styles.selectedBadge, { backgroundColor: `${colors.success}18` }]}>
-                <Check color={colors.success} size={14} />
-                <Text style={[styles.selectedText, { color: colors.success }]}>{t('accountPresets.selected')}</Text>
-              </View>
-            )}
-          </View>
-          {!!subtitle && <Text style={[styles.presetSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</Text>}
-          {!!meta && <Text style={[styles.presetMeta, { color: colors.textSecondary }]} numberOfLines={1}>{meta}</Text>}
-          {!!date && <Text style={[styles.presetDate, { color: colors.textSecondary }]}>{date}</Text>}
+        <View style={styles.presetTopMeta}>
+          {selected && (
+            <View style={[styles.selectedBadge, { backgroundColor: `${colors.success}18` }]}>
+              <Check color={colors.success} size={14} />
+              <Text style={[styles.selectedText, { color: colors.success }]}>{t('accountPresets.selected')}</Text>
+            </View>
+          )}
         </View>
+        <View style={styles.presetIconActions}>
+          <TouchableOpacity
+            style={[styles.iconActionButton, { backgroundColor: `${colors.primary}14` }]}
+            onPress={onShare}
+            disabled={loading}
+          >
+            <Share2 color={colors.primary} size={18} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconActionButton, { backgroundColor: `${colors.primary}14` }]}
+            onPress={onEdit}
+            disabled={loading}
+          >
+            <Pencil color={colors.primary} size={18} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconActionButton, { backgroundColor: `${colors.error}14` }]}
+            onPress={onDelete}
+            disabled={loading}
+          >
+            <Trash2 color={colors.error} size={18} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      <View style={styles.presetBody}>
+        <Text style={[styles.presetTitle, { color: colors.text }]} numberOfLines={2}>{title}</Text>
+        {!!subtitle && <Text style={[styles.presetSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</Text>}
+        {!!meta && <Text style={[styles.presetMeta, { color: colors.textSecondary }]} numberOfLines={1}>{meta}</Text>}
+        {!!date && <Text style={[styles.presetDate, { color: colors.textSecondary }]}>{date}</Text>}
       </View>
       <View style={styles.actions}>
         <TouchableOpacity
@@ -408,20 +459,6 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onEdi
         >
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyText}>{t('accountPresets.apply')}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.iconActionButton, { backgroundColor: `${colors.primary}14` }]}
-          onPress={onEdit}
-          disabled={loading}
-        >
-          <Pencil color={colors.primary} size={18} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.iconActionButton, { backgroundColor: `${colors.error}14` }]}
-          onPress={onDelete}
-          disabled={loading}
-        >
-          <Trash2 color={colors.error} size={18} />
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -430,6 +467,10 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onEdi
 const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onChange, onCancel, onSave }) => {
   const [countryPickerTarget, setCountryPickerTarget] = useState(null);
   const [countrySearchQuery, setCountrySearchQuery] = useState('');
+  const [showBankPicker, setShowBankPicker] = useState(false);
+  const [bankSearchQuery, setBankSearchQuery] = useState('');
+  const [banks, setBanks] = useState([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const countryTargets = {
     phone: { codeKey: 'phone_country_code', aliasKey: 'countryCode', phoneKey: 'phone' },
@@ -442,16 +483,43 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
     country.name.toLowerCase().includes(countrySearchQuery.toLowerCase()) ||
     country.code.includes(countrySearchQuery)
   ));
+  const filteredBanks = banks.filter(bank => (
+    `${bank.name || ''} ${bank.shortName || ''} ${bank.code || ''}`.toLowerCase().includes(bankSearchQuery.toLowerCase())
+  ));
   const openCountryPicker = (target) => {
     setCountryPickerTarget(target);
     setCountrySearchQuery('');
+  };
+  const openBankPicker = async () => {
+    setShowBankPicker(true);
+    setBankSearchQuery('');
+
+    if (banks.length || loadingBanks) return;
+
+    setLoadingBanks(true);
+    try {
+      const response = await fetch('https://api.vietqr.io/v2/banks');
+      const result = await response.json();
+      if (result.code === '00') {
+        setBanks(result.data || []);
+      }
+    } catch (error) {
+      Alert.alert(t('common.error'), error?.message || t('accountPresets.loadFailed'));
+    } finally {
+      setLoadingBanks(false);
+    }
   };
   const closeCountryPicker = () => {
     setCountryPickerTarget(null);
     setCountrySearchQuery('');
   };
+  const closeBankPicker = () => {
+    setShowBankPicker(false);
+    setBankSearchQuery('');
+  };
   const handleCancel = () => {
     closeCountryPicker();
+    closeBankPicker();
     onCancel();
   };
   const handleCountrySelect = (code) => {
@@ -463,6 +531,13 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
     }
     onChange(target.phoneKey, normalizePhoneForCountry(form[target.phoneKey], nextCode));
     closeCountryPicker();
+  };
+  const handleBankSelect = (bank) => {
+    const bankCode = `${bank?.code || ''}`.trim();
+    const bankName = `${bank?.shortName || bank?.name || bankCode}`.trim();
+    onChange('bank_code', bankCode);
+    onChange('bank_name', bankName);
+    closeBankPicker();
   };
   const handleAvatarPick = async () => {
     if (!userId) return;
@@ -524,13 +599,39 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
       </View>
     );
   };
+  const renderBankSelector = () => (
+    <View key="bank_selector" style={styles.inputGroup}>
+      <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>{t('myCard.bank')}</Text>
+      <TouchableOpacity
+        style={[styles.bankSelector, { backgroundColor: colors.background }]}
+        onPress={openBankPicker}
+        disabled={saving}
+      >
+        <View style={styles.bankSelectorLeft}>
+          <View style={[styles.bankSelectorIcon, { backgroundColor: colors.card }]}>
+            <CreditCard color={colors.primary} size={18} />
+          </View>
+          <View style={styles.bankSelectorTextBlock}>
+            <Text style={[styles.bankSelectorTitle, { color: colors.text }]} numberOfLines={1}>
+              {form.bank_name || form.bank_code || t('myCard.chooseBank')}
+            </Text>
+            {!!form.bank_code && (
+              <Text style={[styles.bankSelectorCode, { color: colors.textSecondary }]} numberOfLines={1}>
+                {form.bank_code}
+              </Text>
+            )}
+          </View>
+        </View>
+        <ChevronDown color={colors.textSecondary} size={18} />
+      </TouchableOpacity>
+    </View>
+  );
   const fields = isBank
     ? [
       ['label', t('accountPresets.label')],
-      ['bank_code', t('accountPresets.bankCode')],
-      ['bank_name', t('accountPresets.bankName')],
-      ['account_number', t('accountPresets.accountNumber'), 'numeric'],
+      ['bank_selector', t('myCard.bank'), 'default', false, 'bank'],
       ['account_holder_name', t('accountPresets.accountHolder')],
+      ['account_number', t('accountPresets.accountNumber'), 'numeric'],
     ]
     : [
       ['label', t('accountPresets.label')],
@@ -585,6 +686,10 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
               </View>
             )}
             {fields.map(([key, label, keyboardType, multiline, type]) => {
+              if (type === 'bank') {
+                return renderBankSelector();
+              }
+
               if (type === 'phone' || type === 'zalo' || type === 'whatsapp') {
                 return renderPhoneInput(key, label, type);
               }
@@ -625,6 +730,19 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
             onQueryChange={setCountrySearchQuery}
             onClose={closeCountryPicker}
             onSelect={handleCountrySelect}
+          />
+          <BankPickerModal
+            visible={showBankPicker}
+            colors={colors}
+            banks={filteredBanks}
+            loading={loadingBanks}
+            query={bankSearchQuery}
+            selectedCode={form.bank_code}
+            title={t('myCard.chooseBank')}
+            placeholder={t('myCard.searchPlaceholderBank')}
+            onQueryChange={setBankSearchQuery}
+            onClose={closeBankPicker}
+            onSelect={handleBankSelect}
           />
         </View>
       </View>
@@ -689,6 +807,76 @@ const CountryPickerModal = ({
   </Modal>
 );
 
+const BankPickerModal = ({
+  visible,
+  colors,
+  banks,
+  loading,
+  query,
+  selectedCode,
+  title,
+  placeholder,
+  onQueryChange,
+  onClose,
+  onSelect
+}) => (
+  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <View style={styles.countryModalOverlay}>
+      <View style={[styles.countryModalContent, { backgroundColor: colors.card }]}>
+        <View style={styles.countryModalHeader}>
+          <Text style={[styles.countryModalTitle, { color: colors.text }]}>{title}</Text>
+          <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
+        </View>
+        <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
+          <Search color={colors.textSecondary} size={18} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder={placeholder}
+            placeholderTextColor={colors.textSecondary}
+            value={query}
+            onChangeText={onQueryChange}
+          />
+        </View>
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {banks.map((bank) => {
+              const isSelected = selectedCode === bank.code;
+              return (
+                <TouchableOpacity
+                  key={`${bank.code}-${bank.name}`}
+                  style={[styles.countryItem, isSelected && { backgroundColor: colors.background }]}
+                  onPress={() => onSelect(bank)}
+                >
+                  <View style={styles.countryItemLeft}>
+                    {bank.logo ? (
+                      <Image source={{ uri: bank.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
+                    ) : (
+                      <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
+                        <CreditCard size={18} color={colors.primary} />
+                      </View>
+                    )}
+                    <View style={styles.countryTextBlock}>
+                      <Text style={[styles.countryName, { color: colors.text }]} numberOfLines={1}>
+                        {bank.shortName || bank.name || bank.code}
+                      </Text>
+                      <Text style={[styles.countryCodeSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {bank.code}
+                      </Text>
+                    </View>
+                  </View>
+                  {isSelected && <Check color={colors.primary} size={20} />}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
+    </View>
+  </Modal>
+);
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -700,12 +888,13 @@ const styles = StyleSheet.create({
   emptyDesc: { marginTop: 6, fontSize: 13, lineHeight: 19, fontWeight: '600', textAlign: 'center' },
   list: { gap: 12 },
   presetCard: { borderRadius: 22, padding: 14 },
-  presetMain: { flexDirection: 'row', alignItems: 'flex-start' },
-  iconBox: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 12, overflow: 'hidden' },
+  presetTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  iconBox: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   presetAvatar: { width: 42, height: 42, borderRadius: 14 },
-  presetBody: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  presetTitle: { flex: 1, fontSize: 16, fontWeight: '900' },
+  presetTopMeta: { flex: 1, minWidth: 0, alignItems: 'flex-start' },
+  presetIconActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  presetBody: { marginTop: 12, minWidth: 0 },
+  presetTitle: { fontSize: 17, lineHeight: 22, fontWeight: '900' },
   presetSubtitle: { marginTop: 4, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   presetMeta: { marginTop: 3, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   presetDate: { marginTop: 6, fontSize: 11, fontWeight: '800' },
@@ -714,7 +903,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   applyButton: { flex: 1, minHeight: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   applyText: { color: '#fff', fontSize: 14, fontWeight: '900' },
-  iconActionButton: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  iconActionButton: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.48)', justifyContent: 'flex-end' },
   editSheet: { maxHeight: '88%', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },
   editHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
@@ -730,6 +919,12 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 12 },
   inputLabel: { fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 7, marginLeft: 4 },
   input: { minHeight: 50, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontWeight: '600' },
+  bankSelector: { minHeight: 56, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bankSelectorLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  bankSelectorIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  bankSelectorTextBlock: { flex: 1, minWidth: 0 },
+  bankSelectorTitle: { fontSize: 15, fontWeight: '800' },
+  bankSelectorCode: { marginTop: 2, fontSize: 11, fontWeight: '700' },
   phoneInputRow: { flexDirection: 'row', alignItems: 'center' },
   countrySelector: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, height: 50, borderRadius: 14, minWidth: 90, justifyContent: 'center', marginRight: 10 },
   countryCodeText: { fontWeight: '800' },
@@ -746,6 +941,7 @@ const styles = StyleSheet.create({
   countryItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 10, borderRadius: 12 },
   countryItemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
   countryIconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  bankLogoSmall: { width: 40, height: 26, marginRight: 12 },
   countryTextBlock: { flex: 1, minWidth: 0 },
   countryName: { fontSize: 15, fontWeight: '700' },
   countryCodeSub: { fontSize: 11, marginTop: 2, fontWeight: '600' },

@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Globe2, LogIn, LogOut, Mail, ShieldCheck, UserPlus } from 'lucide-react-native';
+import { Camera, Globe2, LogIn, LogOut, Mail, ShieldCheck } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileAvatar from '../components/ProfileAvatar';
 import { useTheme, Spacing } from '../constants/Theme';
@@ -41,15 +41,12 @@ export default function AuthScreen() {
     accountProfile,
     isAuthReady,
     isSupabaseConfigured,
-    authRedirectUrl,
     signInWithPassword,
-    signUpWithPassword,
     signInWithGoogle,
     refreshSession,
     cacheAccountProfile,
     signOut,
   } = useAuth();
-  const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
@@ -71,17 +68,9 @@ export default function AuthScreen() {
     }
   };
 
-  const handleEmailSubmit = () => runAuthAction(mode, async () => {
+  const handleEmailSubmit = () => runAuthAction('signin', async () => {
     if (!email.trim() || !password) {
       Alert.alert(t('common.error'), t('auth.emailPasswordRequired'));
-      return;
-    }
-
-    if (mode === 'signup') {
-      const data = await signUpWithPassword({ email, password });
-      if (!data?.session) {
-        Alert.alert(t('auth.checkEmailTitle'), t('auth.checkEmailDesc'));
-      }
       return;
     }
 
@@ -279,24 +268,8 @@ export default function AuthScreen() {
         <Text style={[styles.screenTitle, { color: colors.text }]}>{t('auth.accountTitle')}</Text>
 
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <View style={styles.segmentedControl}>
-            <TouchableOpacity
-              style={[styles.segment, mode === 'signin' && { backgroundColor: colors.primary }]}
-              onPress={() => setMode('signin')}
-            >
-              <Text style={[styles.segmentText, { color: mode === 'signin' ? '#fff' : colors.textSecondary }]}>
-                {t('auth.signIn')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.segment, mode === 'signup' && { backgroundColor: colors.primary }]}
-              onPress={() => setMode('signup')}
-            >
-              <Text style={[styles.segmentText, { color: mode === 'signup' ? '#fff' : colors.textSecondary }]}>
-                {t('auth.signUp')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={[styles.authTitle, { color: colors.text }]}>{t('auth.signIn')}</Text>
+          <Text style={[styles.authDesc, { color: colors.textSecondary }]}>{t('auth.signInOnlyDesc')}</Text>
 
           {!isSupabaseConfigured && (
             <Text style={[styles.configWarning, { color: colors.error }]}>
@@ -333,7 +306,7 @@ export default function AuthScreen() {
                 placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
                 secureTextEntry
-                textContentType={mode === 'signup' ? 'newPassword' : 'password'}
+                textContentType="password"
               />
             </View>
           </View>
@@ -343,14 +316,12 @@ export default function AuthScreen() {
             onPress={handleEmailSubmit}
             disabled={!isSupabaseConfigured || Boolean(loadingAction)}
           >
-            {loadingAction === mode ? (
+            {loadingAction === 'signin' ? (
               <ActivityIndicator color="#fff" />
-            ) : mode === 'signup' ? (
-              <UserPlus color="#fff" size={18} />
             ) : (
               <LogIn color="#fff" size={18} />
             )}
-            <Text style={styles.primaryButtonText}>{mode === 'signup' ? t('auth.createAccount') : t('auth.signIn')}</Text>
+            <Text style={styles.primaryButtonText}>{t('auth.signIn')}</Text>
           </TouchableOpacity>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -381,6 +352,8 @@ const styles = StyleSheet.create({
   scrollContent: { padding: Spacing.lg },
   screenTitle: { fontSize: 32, fontWeight: '800', marginBottom: Spacing.xl },
   card: { borderRadius: 24, padding: Spacing.lg, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, elevation: 4 },
+  authTitle: { fontSize: 24, fontWeight: '900', marginBottom: 6 },
+  authDesc: { fontSize: 14, lineHeight: 20, fontWeight: '600', marginBottom: Spacing.lg },
   profileCard: {
     borderRadius: 28,
     padding: Spacing.lg,
@@ -392,9 +365,6 @@ const styles = StyleSheet.create({
   },
   profileHeader: { alignItems: 'center', marginBottom: Spacing.lg, position: 'relative' },
   avatarEditButton: { position: 'absolute', right: -4, bottom: -4, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
-  segmentedControl: { flexDirection: 'row', padding: 5, borderRadius: 15, marginBottom: Spacing.lg, backgroundColor: 'rgba(142,142,147,0.12)' },
-  segment: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 12 },
-  segmentText: { fontSize: 14, fontWeight: '800' },
   configWarning: { fontSize: 14, fontWeight: '700', lineHeight: 20, marginBottom: Spacing.md },
   inputGroup: { marginBottom: Spacing.md },
   label: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },

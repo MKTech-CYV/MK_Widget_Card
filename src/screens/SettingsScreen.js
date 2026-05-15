@@ -309,7 +309,7 @@ export function TermsScreen() {
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
-  const termBlocks = ['block1', 'block2', 'block3', 'block4', 'block5'];
+  const termBlocks = ['block1', 'block2', 'block3', 'block4', 'block5', 'block6', 'block7', 'block8'];
   
   return (
     <ScrollView 
