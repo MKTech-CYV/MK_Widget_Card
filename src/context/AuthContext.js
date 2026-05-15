@@ -4,6 +4,11 @@ import * as ExpoLinking from 'expo-linking';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { StorageService } from '../services/StorageService';
 import { fetchProfile } from '../services/ProfileService';
+import {
+  bankQrPresetToLocalData,
+  ecardPresetToLocalData,
+  fetchProfileWithSelectedPresets,
+} from '../services/AccountPresetService';
 
 const AuthContext = createContext(null);
 const AUTH_CALLBACK_PATH = 'auth/callback';
@@ -34,6 +39,87 @@ const getUrlParams = (url = '') => {
     ...parseParamString(query),
     ...parseParamString(hash),
   };
+};
+
+const compactText = (value) => `${value || ''}`.trim();
+
+const ECARD_COMPARE_KEYS = [
+  'fullName',
+  'phone',
+  'email',
+  'title',
+  'company',
+  'department',
+  'website',
+  'address',
+  'linkedin',
+  'facebook',
+  'zalo',
+  'zaloCountryCode',
+  'whatsapp',
+  'whatsappCountryCode',
+  'telegram',
+  'bio',
+  'avatar',
+  'avatarUrl',
+  'countryCode',
+];
+const BANK_COMPARE_KEYS = ['bankName', 'bankAccount', 'bankAccountHolderName'];
+
+const sectionHasValue = (data = {}, keys = []) => (
+  keys.some(key => compactText(data[key]))
+);
+
+const sectionMatches = (current = {}, presetData = {}, keys = []) => (
+  sectionHasValue(presetData, keys) &&
+  keys.every(key => compactText(current[key]) === compactText(presetData[key]))
+);
+
+const getAccountPresetSectionsInUse = async (targetUser) => {
+  StorageService.init();
+  const currentData = await StorageService.getUserData().catch(() => null);
+  if (!currentData || !targetUser?.id) {
+    return { currentData, sections: { ecard: false, bank: false } };
+  }
+
+  const source = StorageService.getAccountPresetSource(currentData);
+  const sections = {
+    ecard: Boolean(source.ecardPresetId),
+    bank: Boolean(source.bankPresetId),
+  };
+
+  if (!sections.ecard || !sections.bank) {
+    const profile = await fetchProfileWithSelectedPresets(targetUser.id).catch(() => null);
+
+    if (!sections.ecard && profile?.selected_ecard) {
+      sections.ecard = sectionMatches(
+        currentData,
+        ecardPresetToLocalData(profile.selected_ecard),
+        ECARD_COMPARE_KEYS
+      );
+    }
+
+    if (!sections.bank && profile?.selected_bank_qr) {
+      sections.bank = sectionMatches(
+        currentData,
+        bankQrPresetToLocalData(profile.selected_bank_qr),
+        BANK_COMPARE_KEYS
+      );
+    }
+  }
+
+  return { currentData, sections };
+};
+
+const clearLocalAccountPresetSections = async ({ currentData, sections } = {}) => {
+  if (!currentData || (!sections?.ecard && !sections?.bank)) return;
+
+  const nextData = StorageService.clearAccountPresetSections(currentData, sections);
+  if (nextData) {
+    await StorageService.setUserData(nextData);
+  } else {
+    await StorageService.clearUserData();
+  }
 };
 
 export const AuthProvider = ({ children }) => {
@@ -207,8 +293,10 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     if (!isSupabaseConfigured) return;
 
+    const presetSectionsInUse = await getAccountPresetSectionsInUse(user).catch(() => null);
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    await clearLocalAccountPresetSections(presetSectionsInUse).catch(() => {});
   };
 
   const value = useMemo(() => ({

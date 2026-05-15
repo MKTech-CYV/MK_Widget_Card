@@ -10,13 +10,23 @@ const MIME_EXTENSIONS = {
   'image/heif': 'heif',
 };
 
-export const parseStoragePathFromPublicUrl = (publicUrl) => {
-  if (!publicUrl) return null;
+export const parseStoragePathFromPublicUrl = (publicUrl, bucketHint = '') => {
+  const value = `${publicUrl || ''}`.trim();
+  if (!value) return null;
+
+  if (bucketHint && !/^https?:\/\//i.test(value) && value.includes('/')) {
+    const path = value.replace(/^\/+/, '');
+    return {
+      bucket: bucketHint,
+      path: path.startsWith(`${bucketHint}/`) ? path.slice(bucketHint.length + 1) : path,
+    };
+  }
+
   try {
-    const url = new URL(publicUrl);
-    const match = url.pathname.match(/^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+    const url = new URL(value);
+    const match = url.pathname.match(/^\/storage\/v1\/object\/(?:public|authenticated|sign)\/([^/]+)\/(.+)$/);
     if (!match) return null;
-    return { bucket: match[1], path: match[2] };
+    return { bucket: decodeURIComponent(match[1]), path: decodeURIComponent(match[2]) };
   } catch {
     return null;
   }
@@ -34,6 +44,33 @@ export const deleteStorageFile = async ({ bucket, path }) => {
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw error;
   return true;
+};
+
+export const deleteStorageFileFromUrl = async (publicUrl, bucketHint = '') => {
+  const storageInfo = parseStoragePathFromPublicUrl(publicUrl, bucketHint);
+
+  if (!storageInfo?.bucket || !storageInfo.path) {
+    return false;
+  }
+
+  await deleteStorageFile(storageInfo);
+  return true;
+};
+
+export const deleteStorageFileFromUrlIfChanged = async ({ previousUrl, nextUrl, bucket }) => {
+  const previousStorage = parseStoragePathFromPublicUrl(previousUrl, bucket);
+  const nextStorage = parseStoragePathFromPublicUrl(nextUrl, bucket);
+
+  if (
+    previousStorage?.bucket === bucket &&
+    previousStorage.path &&
+    previousStorage.path !== nextStorage?.path
+  ) {
+    await deleteStorageFile(previousStorage);
+    return true;
+  }
+
+  return false;
 };
 
 const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';

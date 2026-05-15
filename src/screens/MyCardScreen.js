@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AtSign,
@@ -48,12 +49,13 @@ import {
   ecardToPresetPayload,
   fetchBankQrPresets,
   fetchECardPresets,
+  isPresetLimitPolicyError,
   saveBankQrPreset,
   saveECardPreset,
   updateBankQrPreset,
   updateECardPreset
 } from '../services/AccountPresetService';
-import { uploadImageToBucket } from '../services/SupabaseStorageService';
+import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/SupabaseStorageService';
 import {
   buildVCard,
   formatInternationalPhone,
@@ -115,6 +117,11 @@ const DEFAULT_BANK_FORM = {
 };
 
 const trimText = (value) => `${value || ''}`.trim();
+
+const getECardPresetAvatarUrl = (preset = {}) => {
+  const social = preset.social || {};
+  return trimText(preset.avatar_url || social.avatarUrl || social.avatar);
+};
 
 const normalizePhoneInput = (phone, countryCode) => (
   normalizePhoneForCountry(phone, countryCode)
@@ -198,12 +205,14 @@ export default function MyCardScreen({ route }) {
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [savingDestination, setSavingDestination] = useState(null);
-  const [avatarUploading, setAvatarUploading] = useState(false);
   const [showPresetUpdatePicker, setShowPresetUpdatePicker] = useState(false);
   const [presetUpdateKind, setPresetUpdateKind] = useState(null);
   const [presetUpdateItems, setPresetUpdateItems] = useState([]);
   const [pendingPresetData, setPendingPresetData] = useState(null);
   const [presetUpdateActionId, setPresetUpdateActionId] = useState(null);
+  const [showPresetNameModal, setShowPresetNameModal] = useState(false);
+  const [pendingAccountPreset, setPendingAccountPreset] = useState(null);
+  const [presetNameDraft, setPresetNameDraft] = useState('');
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
 
@@ -212,6 +221,10 @@ export default function MyCardScreen({ route }) {
     loadData();
     fetchBanks();
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadData();
+  }, []));
 
   useEffect(() => {
     const requestedSection = route?.params?.editSection;
@@ -253,6 +266,9 @@ export default function MyCardScreen({ route }) {
       setECardForm(nextECardForm);
       setBankForm(nextBankForm);
     } else {
+      setUserData(null);
+      setECardForm(DEFAULT_ECARD_FORM);
+      setBankForm(DEFAULT_BANK_FORM);
       setEditingSection('ecard');
     }
   };
@@ -280,44 +296,23 @@ export default function MyCardScreen({ route }) {
         : asset.uri;
 
       setECardForm(current => ({ ...current, avatar: localAvatar, avatarUrl: '' }));
-
-      if (user?.id) {
-        setAvatarUploading(true);
-        try {
-          const upload = await uploadImageToBucket({
-            bucket: 'ecards',
-            userId: user.id,
-            asset,
-            prefix: 'ecard-avatar',
-          });
-          setECardForm(current => ({
-            ...current,
-            avatar: upload.publicUrl,
-            avatarUrl: upload.publicUrl,
-          }));
-        } catch (error) {
-          Alert.alert(t('common.error'), error?.message || t('myCard.imageUploadFailed'));
-        } finally {
-          setAvatarUploading(false);
-        }
-      }
     }
   };
 
-  const ensureECardAvatarUploaded = async (data) => {
+  const ensureECardAvatarUploadedWithInfo = async (data) => {
     const avatar = `${data?.avatar || ''}`.trim();
     const avatarUrl = `${data?.avatarUrl || ''}`.trim();
 
     if (!user?.id || !avatar) {
-      return data;
+      return { data, upload: null };
     }
 
     if (avatarUrl && !avatar.startsWith('data:')) {
-      return { ...data, avatar: avatarUrl, avatarUrl };
+      return { data: { ...data, avatar: avatarUrl, avatarUrl }, upload: null };
     }
 
     if (!avatar.startsWith('data:')) {
-      return { ...data, avatarUrl: avatarUrl || avatar };
+      return { data: { ...data, avatarUrl: avatarUrl || avatar }, upload: null };
     }
 
     const upload = await uploadImageToBucket({
@@ -328,18 +323,99 @@ export default function MyCardScreen({ route }) {
     });
 
     return {
-      ...data,
-      avatar: upload.publicUrl,
-      avatarUrl: upload.publicUrl,
+      data: {
+        ...data,
+        avatar: upload.publicUrl,
+        avatarUrl: upload.publicUrl,
+      },
+      upload,
     };
   };
 
-  const buildPresetUpdatePayload = (kind, data) => {
+  const buildPresetUpdatePayload = (kind, data, currentPreset = {}) => {
+    const label = trimText(currentPreset.label);
     const rawPayload = kind === 'bank'
-      ? bankQrToPresetPayload({ userId: user.id, data, bankDisplayName: getBankName(data.bankName) })
-      : ecardToPresetPayload({ userId: user.id, data });
+      ? bankQrToPresetPayload({ userId: user.id, data, bankDisplayName: getBankName(data.bankName), label })
+      : ecardToPresetPayload({ userId: user.id, data, label });
     const { user_id: _userId, ...payload } = rawPayload;
     return payload;
+  };
+
+  const deleteUploadedECardAvatar = async (upload) => {
+    if (upload?.path) {
+      await deleteStorageFile({ bucket: 'ecards', path: upload.path }).catch(() => null);
+    }
+  };
+
+  const showAccountPresetSaveError = (error) => {
+    if (isPresetLimitPolicyError(error)) {
+      Alert.alert(t('myCard.premiumPresetLimitTitle'), t('myCard.premiumPresetLimitMessage'));
+      return;
+    }
+
+    Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
+  };
+
+  const openPresetNameModal = (kind, nextData) => {
+    setPendingAccountPreset({ kind, data: nextData });
+    setPresetNameDraft('');
+    setShowPresetNameModal(true);
+  };
+
+  const closePresetNameModal = () => {
+    if (savingDestination === 'account') return;
+
+    setShowPresetNameModal(false);
+    setPendingAccountPreset(null);
+    setPresetNameDraft('');
+  };
+
+  const handleSaveAccountPresetWithName = async () => {
+    if (!user?.id || !pendingAccountPreset) return;
+
+    const label = trimText(presetNameDraft);
+    if (!label) {
+      Alert.alert(t('common.error'), t('myCard.presetNameRequired'));
+      return;
+    }
+
+    setSavingDestination('account');
+    let uploadedAvatar = null;
+    let nextData = pendingAccountPreset.data;
+
+    try {
+      if (pendingAccountPreset.kind === 'ecard') {
+        const uploadResult = await ensureECardAvatarUploadedWithInfo(nextData);
+        nextData = uploadResult.data;
+        uploadedAvatar = uploadResult.upload;
+
+        const preset = await saveECardPreset({ userId: user.id, data: nextData, label });
+        nextData = StorageService.markAccountPresetSource(nextData, { ecardPresetId: preset?.id });
+        setShowPresetNameModal(false);
+        setPendingAccountPreset(null);
+        setPresetNameDraft('');
+        await persistData(nextData, t('myCard.ecardAccountSaveSuccess'));
+      } else {
+        const preset = await saveBankQrPreset({
+          userId: user.id,
+          data: nextData,
+          bankDisplayName: getBankName(nextData.bankName),
+          label,
+        });
+        nextData = StorageService.markAccountPresetSource(nextData, { bankPresetId: preset?.id });
+        setShowPresetNameModal(false);
+        setPendingAccountPreset(null);
+        setPresetNameDraft('');
+        await persistData(nextData, t('myCard.bankAccountSaveSuccess'));
+      }
+    } catch (error) {
+      if (!error?.path || error.method === 'POST' || isPresetLimitPolicyError(error)) {
+        await deleteUploadedECardAvatar(uploadedAvatar);
+      }
+      showAccountPresetSaveError(error);
+    } finally {
+      setSavingDestination(null);
+    }
   };
 
   const openPresetUpdatePicker = async (kind, nextData) => {
@@ -380,17 +456,28 @@ export default function MyCardScreen({ route }) {
     if (!user?.id || !pendingPresetData || !presetUpdateKind) return;
 
     setPresetUpdateActionId(preset.id);
+    let uploadedAvatar = null;
     try {
       let nextData = pendingPresetData;
+      const previousAvatarUrl = presetUpdateKind === 'ecard' ? getECardPresetAvatarUrl(preset) : '';
       if (presetUpdateKind === 'ecard') {
-        nextData = await ensureECardAvatarUploaded(nextData);
+        const uploadResult = await ensureECardAvatarUploadedWithInfo(nextData);
+        nextData = uploadResult.data;
+        uploadedAvatar = uploadResult.upload;
       }
 
-      const payload = buildPresetUpdatePayload(presetUpdateKind, nextData);
+      const payload = buildPresetUpdatePayload(presetUpdateKind, nextData, preset);
       if (presetUpdateKind === 'bank') {
         await updateBankQrPreset(preset.id, payload);
+        nextData = StorageService.markAccountPresetSource(nextData, { bankPresetId: preset.id });
       } else {
-        await updateECardPreset(preset.id, payload);
+        await updateECardPreset(preset.id, payload, preset);
+        await deleteStorageFileFromUrlIfChanged({
+          previousUrl: previousAvatarUrl,
+          nextUrl: nextData.avatarUrl || nextData.avatar,
+          bucket: 'ecards',
+        }).catch(() => null);
+        nextData = StorageService.markAccountPresetSource(nextData, { ecardPresetId: preset.id });
       }
 
       setShowPresetUpdatePicker(false);
@@ -402,6 +489,7 @@ export default function MyCardScreen({ route }) {
         presetUpdateKind === 'bank' ? t('myCard.bankPresetUpdateSuccess') : t('myCard.ecardPresetUpdateSuccess')
       );
     } catch (error) {
+      await deleteUploadedECardAvatar(uploadedAvatar);
       Alert.alert(t('common.error'), error?.message || t('myCard.updatePresetFailed'));
     } finally {
       setPresetUpdateActionId(null);
@@ -437,20 +525,14 @@ export default function MyCardScreen({ route }) {
     }
 
     if (destination === 'account' && user?.id) {
-      setSavingDestination('account');
-      try {
-        nextData = await ensureECardAvatarUploaded(nextData);
-        await saveECardPreset({ userId: user.id, data: nextData });
-        await persistData(nextData, t('myCard.ecardAccountSaveSuccess'));
-      } catch (error) {
-        Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
-      } finally {
-        setSavingDestination(null);
-      }
+      openPresetNameModal('ecard', nextData);
       return;
     }
 
-    await persistData(nextData, t('myCard.ecardSaveSuccess'));
+    await persistData(
+      StorageService.clearAccountPresetSource(nextData, 'ecard'),
+      t('myCard.ecardSaveSuccess')
+    );
   };
 
   const handleSaveBank = async (destination = 'local') => {
@@ -469,23 +551,14 @@ export default function MyCardScreen({ route }) {
     }
 
     if (destination === 'account' && user?.id) {
-      setSavingDestination('account');
-      try {
-        await saveBankQrPreset({
-          userId: user.id,
-          data: nextData,
-          bankDisplayName: getBankName(nextData.bankName),
-        });
-        await persistData(nextData, t('myCard.bankAccountSaveSuccess'));
-      } catch (error) {
-        Alert.alert(t('common.error'), error?.message || t('myCard.accountSaveFailed'));
-      } finally {
-        setSavingDestination(null);
-      }
+      openPresetNameModal('bank', nextData);
       return;
     }
 
-    await persistData(nextData, t('myCard.bankSaveSuccess'));
+    await persistData(
+      StorageService.clearAccountPresetSource(nextData, 'bank'),
+      t('myCard.bankSaveSuccess')
+    );
   };
 
   const getBankName = (code) => {
@@ -629,7 +702,7 @@ export default function MyCardScreen({ route }) {
           </View>
         )}
         <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-          {avatarUploading ? <ActivityIndicator color="#fff" /> : <Camera color="#fff" size={14} />}
+          <Camera color="#fff" size={14} />
         </View>
       </TouchableOpacity>
 
@@ -805,6 +878,17 @@ export default function MyCardScreen({ route }) {
             setShowSaveConfirm(false);
             onSave('preset');
           }}
+        />
+        <PresetNameModal
+          visible={showPresetNameModal}
+          isBank={pendingAccountPreset?.kind === 'bank'}
+          value={presetNameDraft}
+          saving={savingDestination === 'account'}
+          colors={colors}
+          t={t}
+          onChange={setPresetNameDraft}
+          onCancel={closePresetNameModal}
+          onSave={handleSaveAccountPresetWithName}
         />
         <PresetUpdateModal
           visible={showPresetUpdatePicker}
@@ -1288,6 +1372,60 @@ const SaveConfirmModal = ({
   );
 };
 
+const PresetNameModal = ({
+  visible,
+  isBank,
+  value,
+  saving,
+  colors,
+  t,
+  onChange,
+  onCancel,
+  onSave
+}) => (
+  <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+    <View style={styles.confirmOverlay}>
+      <View style={[styles.presetNameCard, { backgroundColor: colors.card }]}>
+        <View style={[styles.confirmIcon, { backgroundColor: `${colors.primary}16` }]}>
+          <Save color={colors.primary} size={24} />
+        </View>
+        <Text style={[styles.confirmTitle, { color: colors.text }]}>{t('myCard.presetNameTitle')}</Text>
+        <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>
+          {isBank ? t('myCard.bankPresetNameMessage') : t('myCard.ecardPresetNameMessage')}
+        </Text>
+        <TextInput
+          style={[styles.presetNameInput, { backgroundColor: colors.background, color: colors.text }]}
+          value={value}
+          onChangeText={onChange}
+          placeholder={isBank ? t('myCard.bankPresetNamePlaceholder') : t('myCard.ecardPresetNamePlaceholder')}
+          placeholderTextColor={colors.textSecondary}
+          autoFocus
+          editable={!saving}
+          returnKeyType="done"
+          onSubmitEditing={onSave}
+        />
+        <View style={styles.presetNameActions}>
+          <TouchableOpacity
+            style={[styles.confirmCancel, { backgroundColor: colors.background }]}
+            onPress={onCancel}
+            disabled={saving}
+          >
+            <Text style={[styles.confirmCancelText, { color: colors.textSecondary }]}>{t('common.cancel')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.confirmSave, { backgroundColor: colors.success }]}
+            onPress={onSave}
+            disabled={saving}
+          >
+            {saving ? <ActivityIndicator color="#fff" /> : <Save color="#fff" size={18} />}
+            <Text style={styles.confirmSaveText}>{t('myCard.saveAccount')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
 const PresetUpdateModal = ({ visible, isBank, items, loadingId, colors, t, onClose, onSelect }) => (
   <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
     <View style={styles.modalOverlay}>
@@ -1420,6 +1558,9 @@ const styles = StyleSheet.create({
   confirmStackButton: { flex: 0, minHeight: 50, width: '100%' },
   confirmCancelText: { fontSize: 15, fontWeight: '800' },
   confirmSaveText: { color: '#fff', fontSize: 15, fontWeight: '800', marginLeft: 8 },
+  presetNameCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
+  presetNameInput: { width: '100%', minHeight: 52, borderRadius: 16, paddingHorizontal: 15, fontSize: 16, fontWeight: '700', marginBottom: 14 },
+  presetNameActions: { flexDirection: 'row', gap: 10, width: '100%' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, height: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

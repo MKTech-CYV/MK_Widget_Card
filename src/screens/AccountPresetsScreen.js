@@ -23,7 +23,7 @@ import {
   updateBankQrPreset,
   updateECardPreset
 } from '../services/AccountPresetService';
-import { uploadImageToBucket } from '../services/SupabaseStorageService';
+import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/SupabaseStorageService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 
@@ -35,6 +35,17 @@ const formatDate = (value) => {
 };
 
 const compactText = (value) => `${value || ''}`.trim();
+
+const getLocalImagePreview = (asset = {}) => (
+  asset.base64
+    ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+    : asset.uri
+);
+
+const getECardPresetAvatarUrl = (preset = {}) => {
+  const social = preset.social || {};
+  return compactText(preset.avatar_url || social.avatarUrl || social.avatar);
+};
 
 const ALL_COUNTRIES = [
   { code: '84', name: 'Việt Nam' }, { code: '1', name: 'United States' }, { code: '44', name: 'United Kingdom' },
@@ -80,6 +91,8 @@ const ecardPresetToEditForm = (item = {}) => {
     telegram: social.telegram || '',
     bio: social.bio || '',
     countryCode: item.phone_country_code || social.countryCode || social.country_code || '84',
+    avatar_preview_uri: '',
+    avatar_asset: null,
   };
 };
 
@@ -200,6 +213,9 @@ export default function AccountPresetsScreen({ navigation, route }) {
         ...currentData,
         ...patch,
       };
+      const sourceUpdate = isBank
+        ? { bankPresetId: item.id }
+        : { ecardPresetId: item.id };
 
       if (isBank) {
         await setSelectedBankQrPreset(user.id, item.id);
@@ -207,7 +223,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
         await setSelectedECardPreset(user.id, item.id);
       }
 
-      await StorageService.setUserData(nextData);
+      await StorageService.setUserData(StorageService.markAccountPresetSource(nextData, sourceUpdate));
       setSelectedId(item.id);
       Alert.alert(t('common.success'), t('accountPresets.applySuccess'), [
         {
@@ -278,6 +294,13 @@ export default function AccountPresetsScreen({ navigation, route }) {
     setEditForm(isBank ? bankPresetToEditForm(item) : ecardPresetToEditForm(item));
   };
 
+  const handleCancelEdit = () => {
+    if (savingEdit) return;
+
+    setEditingItem(null);
+    setEditForm({});
+  };
+
   const handleSaveEdit = async () => {
     if (!editingItem) return;
     if (isBank && !compactText(editForm.account_holder_name)) {
@@ -286,24 +309,70 @@ export default function AccountPresetsScreen({ navigation, route }) {
     }
 
     setSavingEdit(true);
+    let uploadedAvatar = null;
+    let updateSucceeded = false;
+    const isEditingSelectedPreset = selectedId === editingItem.id;
     try {
-      const payload = isBank ? bankEditFormToPayload(editForm) : ecardEditFormToPayload(editForm);
+      let formForPayload = editForm;
+      const previousAvatarUrl = !isBank ? getECardPresetAvatarUrl(editingItem) : '';
+      if (!isBank && editForm.avatar_asset) {
+        uploadedAvatar = await uploadImageToBucket({
+          bucket: 'ecards',
+          userId: user.id,
+          asset: editForm.avatar_asset,
+          prefix: 'ecard-avatar',
+        });
+        formForPayload = {
+          ...editForm,
+          avatar_url: uploadedAvatar.publicUrl,
+          avatar_preview_uri: '',
+          avatar_asset: null,
+        };
+      }
+
+      const payload = isBank ? bankEditFormToPayload(formForPayload) : ecardEditFormToPayload(formForPayload);
       const updated = isBank
         ? await updateBankQrPreset(editingItem.id, payload)
-        : await updateECardPreset(editingItem.id, payload);
+        : await updateECardPreset(editingItem.id, payload, editingItem);
+      updateSucceeded = true;
 
-      if (selectedId === editingItem.id && updated) {
+      if (isEditingSelectedPreset && updated) {
         StorageService.init();
         const currentData = await StorageService.getUserData() || {};
         const patch = isBank ? bankQrPresetToLocalData(updated) : ecardPresetToLocalData(updated);
-        await StorageService.setUserData({ ...currentData, ...patch });
+        const sourceUpdate = isBank
+          ? { bankPresetId: editingItem.id }
+          : { ecardPresetId: editingItem.id };
+        await StorageService.setUserData(
+          StorageService.markAccountPresetSource({ ...currentData, ...patch }, sourceUpdate)
+        );
+      }
+
+      if (!isBank) {
+        await deleteStorageFileFromUrlIfChanged({
+          previousUrl: previousAvatarUrl,
+          nextUrl: payload.avatar_url,
+          bucket: 'ecards',
+        }).catch(() => null);
       }
 
       setEditingItem(null);
       setEditForm({});
       await load();
-      Alert.alert(t('common.success'), t('accountPresets.editSuccess'));
+      Alert.alert(
+        t('common.success'),
+        t('accountPresets.editSuccess'),
+        isEditingSelectedPreset
+          ? [{
+            text: t('common.close'),
+            onPress: () => navigation.getParent()?.navigate('MyCardTab', { refreshRequestId: Date.now() }),
+          }]
+          : undefined
+      );
     } catch (error) {
+      if (!updateSucceeded && uploadedAvatar?.path) {
+        await deleteStorageFile({ bucket: 'ecards', path: uploadedAvatar.path }).catch(() => null);
+      }
       Alert.alert(t('common.error'), error?.message || t('accountPresets.editFailed'));
     } finally {
       setSavingEdit(false);
@@ -376,11 +445,12 @@ export default function AccountPresetsScreen({ navigation, route }) {
         colors={colors}
         t={t}
         onChange={(key, value) => setEditForm(current => ({ ...current, [key]: value }))}
-        onCancel={() => {
-          if (savingEdit) return;
-          setEditingItem(null);
-          setEditForm({});
-        }}
+        onCancel={handleCancelEdit}
+        onAvatarPicked={({ asset, previewUri }) => setEditForm(current => ({
+          ...current,
+          avatar_asset: asset,
+          avatar_preview_uri: previewUri,
+        }))}
         onSave={handleSaveEdit}
       />
     </View>
@@ -464,12 +534,11 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onSha
   );
 };
 
-const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onChange, onCancel, onSave }) => {
+const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onChange, onCancel, onAvatarPicked, onSave }) => {
   const [countryPickerTarget, setCountryPickerTarget] = useState(null);
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
-  const [avatarUploading, setAvatarUploading] = useState(false);
   const countryTargets = {
     phone: { codeKey: 'phone_country_code', aliasKey: 'countryCode', phoneKey: 'phone' },
     zalo: { codeKey: 'zaloCountryCode', phoneKey: 'zalo' },
@@ -545,20 +614,11 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
 
     if (result.canceled || !result.assets?.length) return;
 
-    setAvatarUploading(true);
-    try {
-      const upload = await uploadImageToBucket({
-        bucket: 'ecards',
-        userId,
-        asset: result.assets[0],
-        prefix: 'ecard-avatar',
-      });
-      onChange('avatar_url', upload.publicUrl);
-    } catch (error) {
-      Alert.alert(t('common.error'), error?.message || t('myCard.imageUploadFailed'));
-    } finally {
-      setAvatarUploading(false);
-    }
+    const asset = result.assets[0];
+    onAvatarPicked?.({
+      asset,
+      previewUri: getLocalImagePreview(asset),
+    });
   };
   const renderPhoneInput = (key, label, target) => {
     const targetConfig = countryTargets[target];
@@ -656,17 +716,17 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
                 <TouchableOpacity
                   style={styles.editAvatarButton}
                   onPress={handleAvatarPick}
-                  disabled={saving || avatarUploading}
+                  disabled={saving}
                 >
-                  {form.avatar_url ? (
-                    <Image source={{ uri: form.avatar_url }} style={styles.editAvatarImage} />
+                  {form.avatar_preview_uri || form.avatar_url ? (
+                    <Image source={{ uri: form.avatar_preview_uri || form.avatar_url }} style={styles.editAvatarImage} />
                   ) : (
                     <View style={[styles.editAvatarPlaceholder, { backgroundColor: colors.background }]}>
                       <Camera color={colors.textSecondary} size={30} />
                     </View>
                   )}
                   <View style={[styles.editAvatarBadge, { backgroundColor: colors.primary }]}>
-                    {avatarUploading ? <ActivityIndicator color="#fff" /> : <Camera color="#fff" size={14} />}
+                    <Camera color="#fff" size={14} />
                   </View>
                 </TouchableOpacity>
                 <Text style={[styles.editAvatarLabel, { color: colors.textSecondary }]}>{t('myCard.avatar')}</Text>

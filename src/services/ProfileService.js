@@ -26,8 +26,9 @@ export const updateProfileAvatar = async (userId, avatarUrl) => {
 
   if (error) throw error;
 
-  const previousPath = parseStoragePathFromPublicUrl(previousProfile?.avatar_url);
-  if (previousPath?.bucket === 'avatars' && previousPath.path && previousProfile?.avatar_url !== avatarUrl) {
+  const previousPath = parseStoragePathFromPublicUrl(previousProfile?.avatar_url, 'avatars');
+  const nextPath = parseStoragePathFromPublicUrl(avatarUrl, 'avatars');
+  if (previousPath?.bucket === 'avatars' && previousPath.path && previousPath.path !== nextPath?.path) {
     await deleteStorageFile(previousPath).catch(() => null);
   }
 
