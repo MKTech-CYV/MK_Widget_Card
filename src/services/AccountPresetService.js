@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase, supabaseAnonKey, supabaseKey, supabasePublishableKey, supabaseUrl } from './supabaseClient';
+import { deleteStorageFile, parseStoragePathFromPublicUrl } from './SupabaseStorageService';
+import { getFriendlyErrorMessage } from '../utils/errorParser';
 
 const requireAuthSession = async () => {
   if (!isSupabaseConfigured) {
@@ -19,17 +21,23 @@ const restRequest = async (path, { method = 'GET', body, prefer } = {}) => {
   const restKey = supabasePublishableKey || supabaseAnonKey || supabaseKey;
   const baseUrl = supabaseUrl.replace(/\/$/, '');
 
-  const response = await fetch(`${baseUrl}/rest/v1${path}`, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      apikey: restKey,
-      Authorization: `Bearer ${session.access_token}`,
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-      ...(prefer ? { Prefer: prefer } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/rest/v1${path}`, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        apikey: restKey,
+        Authorization: `Bearer ${session.access_token}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(prefer ? { Prefer: prefer } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (error) {
+    const friendly = getFriendlyErrorMessage(error);
+    throw new Error(friendly || 'Không có kết nối mạng. Vui lòng kiểm tra kết nối Internet.');
+  }
 
   if (!response.ok) {
     const message = await response.text().catch(() => '');
@@ -91,7 +99,7 @@ export const ecardToPresetPayload = ({ userId, data }) => ({
 });
 
 export const bankQrToPresetPayload = ({ userId, data, bankDisplayName }) => {
-  const holderName = compactText(data.bankAccountHolderName) || compactText(data.fullName);
+  const holderName = compactText(data.bankAccountHolderName);
 
   return {
     user_id: userId,
@@ -242,7 +250,20 @@ export const setSelectedBankQrPreset = async (userId, presetId) => {
   });
 };
 
+const fetchECardPresetById = async (presetId) => {
+  const data = await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}&select=*,social`);
+  return firstRow(data);
+};
+
 export const deleteECardPreset = async (presetId) => {
+  const preset = await fetchECardPresetById(presetId);
+  const avatarUrl = compactText(preset?.avatar_url || preset?.social?.avatarUrl || preset?.social?.avatar || '');
+  const storageInfo = parseStoragePathFromPublicUrl(avatarUrl);
+
+  if (storageInfo?.bucket && storageInfo?.path) {
+    await deleteStorageFile(storageInfo).catch(() => null);
+  }
+
   await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}`, {
     method: 'DELETE',
     prefer: 'return=minimal',

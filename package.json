@@ -37,7 +37,13 @@
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.3.0"
   },
-  "private": false,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": ["react-native-default-preference"]
+      }
+    }
+  },
   "devDependencies": {
     "@types/react": "~19.1.10",
     "expo-server-sdk": "^6.1.0",
