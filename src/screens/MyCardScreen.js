@@ -45,13 +45,17 @@ import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
 import {
+  bankQrPresetToLocalData,
   bankQrToPresetPayload,
+  ecardPresetToLocalData,
   ecardToPresetPayload,
   fetchBankQrPresets,
   fetchECardPresets,
   isPresetLimitPolicyError,
   saveBankQrPreset,
   saveECardPreset,
+  setSelectedBankQrPreset,
+  setSelectedECardPreset,
   updateBankQrPreset,
   updateECardPreset
 } from '../services/AccountPresetService';
@@ -213,6 +217,11 @@ export default function MyCardScreen({ route }) {
   const [showPresetNameModal, setShowPresetNameModal] = useState(false);
   const [pendingAccountPreset, setPendingAccountPreset] = useState(null);
   const [presetNameDraft, setPresetNameDraft] = useState('');
+  const [showPresetApplyPicker, setShowPresetApplyPicker] = useState(false);
+  const [presetApplyKind, setPresetApplyKind] = useState(null);
+  const [presetApplyItems, setPresetApplyItems] = useState([]);
+  const [presetApplyLoading, setPresetApplyLoading] = useState(false);
+  const [presetApplyActionId, setPresetApplyActionId] = useState(null);
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
 
@@ -450,6 +459,74 @@ export default function MyCardScreen({ route }) {
     setPresetUpdateKind(null);
     setPendingPresetData(null);
     setPresetUpdateItems([]);
+  };
+
+  const openPresetApplyPicker = async (kind) => {
+    if (!user?.id || presetApplyLoading) return;
+
+    setPresetApplyKind(kind);
+    setShowPresetApplyPicker(true);
+    setPresetApplyLoading(true);
+    try {
+      const presets = kind === 'bank'
+        ? await fetchBankQrPresets()
+        : await fetchECardPresets();
+      setPresetApplyItems(presets);
+    } catch (error) {
+      setShowPresetApplyPicker(false);
+      Alert.alert(t('common.error'), error?.message || t('accountPresets.loadFailed'));
+    } finally {
+      setPresetApplyLoading(false);
+    }
+  };
+
+  const closePresetApplyPicker = () => {
+    if (presetApplyActionId) return;
+
+    setShowPresetApplyPicker(false);
+    setPresetApplyKind(null);
+    setPresetApplyItems([]);
+  };
+
+  const handleApplyPresetFromHome = async (preset) => {
+    if (!user?.id || !presetApplyKind) return;
+
+    setPresetApplyActionId(preset.id);
+    try {
+      StorageService.init();
+      const currentData = await StorageService.getUserData() || {};
+      const patch = presetApplyKind === 'bank'
+        ? bankQrPresetToLocalData(preset)
+        : ecardPresetToLocalData(preset);
+      const sourceUpdate = presetApplyKind === 'bank'
+        ? { bankPresetId: preset.id }
+        : { ecardPresetId: preset.id };
+      const nextData = StorageService.markAccountPresetSource(
+        { ...currentData, ...patch },
+        sourceUpdate
+      );
+
+      if (presetApplyKind === 'bank') {
+        await setSelectedBankQrPreset(user.id, preset.id);
+      } else {
+        await setSelectedECardPreset(user.id, preset.id);
+      }
+
+      await StorageService.setUserData(nextData);
+      const nextECardForm = toECardForm(nextData);
+      const nextBankForm = toBankForm(nextData);
+      setUserData(mergeStoredData(nextData, nextECardForm, nextBankForm));
+      setECardForm(nextECardForm);
+      setBankForm(nextBankForm);
+      setShowPresetApplyPicker(false);
+      setPresetApplyKind(null);
+      setPresetApplyItems([]);
+      Alert.alert(t('common.success'), t('accountPresets.applySuccess'));
+    } catch (error) {
+      Alert.alert(t('common.error'), error?.message || t('accountPresets.applyFailed'));
+    } finally {
+      setPresetApplyActionId(null);
+    }
   };
 
   const handleUpdateExistingPreset = async (preset) => {
@@ -975,6 +1052,17 @@ export default function MyCardScreen({ route }) {
                 </View>
               )}
               <View style={styles.cardActionRow}>
+                {Boolean(user?.id) && (
+                  <TouchableOpacity
+                    style={[styles.changePresetButton, { backgroundColor: colors.background }]}
+                    onPress={() => openPresetApplyPicker(activeTab === 'bank' ? 'bank' : 'ecard')}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('myCard.changePreset')}
+                  >
+                    <ChevronDown color={colors.primary} size={18} />
+                    <Text style={[styles.changePresetText, { color: colors.primary }]}>{t('myCard.changePreset')}</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={[styles.cardIconButton, { backgroundColor: colors.background }]}
                   onPress={activeTab === 'bank' ? shareBankQr : shareECard}
@@ -1084,6 +1172,22 @@ export default function MyCardScreen({ route }) {
           <Footer />
         </ScrollView>
       </KeyboardAvoidingView>
+      <PresetApplyModal
+        visible={showPresetApplyPicker}
+        isBank={presetApplyKind === 'bank'}
+        items={presetApplyItems}
+        loading={presetApplyLoading}
+        loadingId={presetApplyActionId}
+        selectedId={
+          presetApplyKind === 'bank'
+            ? StorageService.getAccountPresetSource(userData || {}).bankPresetId
+            : StorageService.getAccountPresetSource(userData || {}).ecardPresetId
+        }
+        colors={colors}
+        t={t}
+        onClose={closePresetApplyPicker}
+        onSelect={handleApplyPresetFromHome}
+      />
     </View>
   );
 }
@@ -1426,6 +1530,76 @@ const PresetNameModal = ({
   </Modal>
 );
 
+const PresetApplyModal = ({ visible, isBank, items, loading, loadingId, selectedId, colors, t, onClose, onSelect }) => (
+  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <View style={[styles.presetUpdateSheet, { backgroundColor: colors.card }]}>
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {isBank ? t('accountPresets.bankList') : t('accountPresets.ecardList')}
+          </Text>
+          <TouchableOpacity onPress={onClose} disabled={Boolean(loadingId)}>
+            <X color={colors.textSecondary} size={24} />
+          </TouchableOpacity>
+        </View>
+        <Text style={[styles.presetUpdateDesc, { color: colors.textSecondary }]}>
+          {isBank ? t('accountPresets.bankListDesc') : t('accountPresets.ecardListDesc')}
+        </Text>
+        {loading ? (
+          <ActivityIndicator style={{ marginVertical: 28 }} color={colors.primary} />
+        ) : !items.length ? (
+          <View style={[styles.presetEmptyInline, { backgroundColor: colors.background }]}>
+            <Text style={[styles.presetUpdateTitle, { color: colors.text }]}>{t('accountPresets.emptyTitle')}</Text>
+            <Text style={[styles.presetUpdateMeta, { color: colors.textSecondary }]}>
+              {isBank ? t('accountPresets.emptyBankDesc') : t('accountPresets.emptyECardDesc')}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={items}
+            keyExtractor={item => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.presetUpdateList}
+            renderItem={({ item }) => {
+              const social = item.social || {};
+              const phoneDisplay = isBank
+                ? ''
+                : formatInternationalPhone(item.phone_country_code || social.countryCode || social.country_code || '84', item.phone);
+              const title = item.label || (isBank ? item.bank_name : item.full_name) || (isBank ? t('accountPresets.bankFallback') : t('accountPresets.ecardFallback'));
+              const subtitle = isBank
+                ? [item.bank_name || item.bank_code, item.account_number].filter(Boolean).join(' • ')
+                : [item.job_title, item.company].filter(Boolean).join(' • ');
+              const meta = isBank
+                ? item.account_holder_name
+                : [item.email, phoneDisplay].filter(Boolean).join(' • ');
+              const isSelected = selectedId === item.id;
+
+              return (
+                <TouchableOpacity
+                  style={[styles.presetUpdateItem, { backgroundColor: colors.background }]}
+                  onPress={() => onSelect(item)}
+                  disabled={Boolean(loadingId)}
+                >
+                  <View style={styles.presetUpdateBody}>
+                    <Text style={[styles.presetUpdateTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+                    {!!subtitle && <Text style={[styles.presetUpdateMeta, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</Text>}
+                    {!!meta && <Text style={[styles.presetUpdateMeta, { color: colors.textSecondary }]} numberOfLines={1}>{meta}</Text>}
+                  </View>
+                  <View style={[styles.presetUpdateIcon, { backgroundColor: isSelected ? colors.success : colors.primary }]}>
+                    {loadingId === item.id ? <ActivityIndicator color="#fff" /> : (
+                      isSelected ? <Check color="#fff" size={18} /> : <ChevronDown color="#fff" size={18} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
+      </View>
+    </View>
+  </Modal>
+);
+
 const PresetUpdateModal = ({ visible, isBank, items, loadingId, colors, t, onClose, onSelect }) => (
   <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
     <View style={styles.modalOverlay}>
@@ -1511,6 +1685,8 @@ const styles = StyleSheet.create({
   cardTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   cardActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 14 },
   cardIconButton: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', zIndex: 3, elevation: 4 },
+  changePresetButton: { minHeight: 42, borderRadius: 21, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', zIndex: 3, elevation: 4 },
+  changePresetText: { marginLeft: 5, fontSize: 12, fontWeight: '900' },
   cardHeader: { marginBottom: 20 },
   cardAvatar: { width: 70, height: 70, borderRadius: 20 },
   cardAvatarPlaceholder: { width: 70, height: 70, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
@@ -1570,6 +1746,7 @@ const styles = StyleSheet.create({
   presetUpdateSheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, maxHeight: '76%' },
   presetUpdateDesc: { fontSize: 13, fontWeight: '700', lineHeight: 19, marginTop: -8, marginBottom: 14 },
   presetUpdateList: { paddingBottom: 8, gap: 10 },
+  presetEmptyInline: { borderRadius: 18, padding: 16, alignItems: 'center' },
   presetUpdateItem: { minHeight: 74, borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center' },
   presetUpdateBody: { flex: 1, minWidth: 0, marginRight: 12 },
   presetUpdateTitle: { fontSize: 15, fontWeight: '900' },
