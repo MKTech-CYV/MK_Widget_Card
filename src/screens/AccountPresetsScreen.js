@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -466,9 +466,7 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onSha
 
 const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onChange, onCancel, onSave }) => {
   const [countryPickerTarget, setCountryPickerTarget] = useState(null);
-  const [countrySearchQuery, setCountrySearchQuery] = useState('');
   const [showBankPicker, setShowBankPicker] = useState(false);
-  const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -479,20 +477,11 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
   };
   const activeCountryTarget = countryTargets[countryPickerTarget] || countryTargets.phone;
   const activeCountryCode = normalizeCountryCode(form[activeCountryTarget.codeKey] || form.phone_country_code || form.countryCode || '84');
-  const filteredCountries = SORTED_COUNTRIES.filter(country => (
-    country.name.toLowerCase().includes(countrySearchQuery.toLowerCase()) ||
-    country.code.includes(countrySearchQuery)
-  ));
-  const filteredBanks = banks.filter(bank => (
-    `${bank.name || ''} ${bank.shortName || ''} ${bank.code || ''}`.toLowerCase().includes(bankSearchQuery.toLowerCase())
-  ));
   const openCountryPicker = (target) => {
     setCountryPickerTarget(target);
-    setCountrySearchQuery('');
   };
   const openBankPicker = async () => {
     setShowBankPicker(true);
-    setBankSearchQuery('');
 
     if (banks.length || loadingBanks) return;
 
@@ -511,11 +500,9 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
   };
   const closeCountryPicker = () => {
     setCountryPickerTarget(null);
-    setCountrySearchQuery('');
   };
   const closeBankPicker = () => {
     setShowBankPicker(false);
-    setBankSearchQuery('');
   };
   const handleCancel = () => {
     closeCountryPicker();
@@ -722,25 +709,21 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
           <CountryPickerModal
             visible={Boolean(countryPickerTarget)}
             colors={colors}
-            countries={filteredCountries}
-            query={countrySearchQuery}
+            countries={SORTED_COUNTRIES}
             selectedCode={activeCountryCode}
             title={t('myCard.chooseCountry')}
             placeholder={t('myCard.searchPlaceholderCountry')}
-            onQueryChange={setCountrySearchQuery}
             onClose={closeCountryPicker}
             onSelect={handleCountrySelect}
           />
           <BankPickerModal
             visible={showBankPicker}
             colors={colors}
-            banks={filteredBanks}
+            banks={banks}
             loading={loadingBanks}
-            query={bankSearchQuery}
             selectedCode={form.bank_code}
             title={t('myCard.chooseBank')}
             placeholder={t('myCard.searchPlaceholderBank')}
-            onQueryChange={setBankSearchQuery}
             onClose={closeBankPicker}
             onSelect={handleBankSelect}
           />
@@ -754,116 +737,81 @@ const CountryPickerModal = ({
   visible,
   colors,
   countries,
-  query,
   selectedCode,
   title,
   placeholder,
-  onQueryChange,
   onClose,
   onSelect
-}) => (
-  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-    <View style={styles.countryModalOverlay}>
-      <View style={[styles.countryModalContent, { backgroundColor: colors.card }]}>
-        <View style={styles.countryModalHeader}>
-          <Text style={[styles.countryModalTitle, { color: colors.text }]}>{title}</Text>
-          <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
-        </View>
-        <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
-          <Search color={colors.textSecondary} size={18} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder={placeholder}
-            placeholderTextColor={colors.textSecondary}
-            value={query}
-            onChangeText={onQueryChange}
-          />
-        </View>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {countries.map((country, index) => {
-            const isSelected = selectedCode === country.code;
-            return (
-              <TouchableOpacity
-                key={`${country.code}-${country.name}-${index}`}
-                style={[styles.countryItem, isSelected && { backgroundColor: colors.background }]}
-                onPress={() => onSelect(country.code)}
-              >
-                <View style={styles.countryItemLeft}>
-                  <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
-                    <Globe size={18} color={colors.primary} />
-                  </View>
-                  <View style={styles.countryTextBlock}>
-                    <Text style={[styles.countryName, { color: colors.text }]} numberOfLines={1}>{country.name}</Text>
-                    <Text style={[styles.countryCodeSub, { color: colors.textSecondary }]}>+{country.code}</Text>
-                  </View>
-                </View>
-                {isSelected && <Check color={colors.primary} size={20} />}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-    </View>
-  </Modal>
-);
+}) => {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef(null);
+  const searchDebounceRef = useRef(null);
 
-const BankPickerModal = ({
-  visible,
-  colors,
-  banks,
-  loading,
-  query,
-  selectedCode,
-  title,
-  placeholder,
-  onQueryChange,
-  onClose,
-  onSelect
-}) => (
-  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-    <View style={styles.countryModalOverlay}>
-      <View style={[styles.countryModalContent, { backgroundColor: colors.card }]}>
-        <View style={styles.countryModalHeader}>
-          <Text style={[styles.countryModalTitle, { color: colors.text }]}>{title}</Text>
-          <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
-        </View>
-        <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
-          <Search color={colors.textSecondary} size={18} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder={placeholder}
-            placeholderTextColor={colors.textSecondary}
-            value={query}
-            onChangeText={onQueryChange}
-          />
-        </View>
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
-        ) : (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {banks.map((bank) => {
-              const isSelected = selectedCode === bank.code;
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      searchInputRef.current?.clear();
+    }
+  }, [visible]);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+  }, []);
+
+  const handleSearchChange = (text) => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => setQuery(text), 120);
+  };
+
+  const trimmedQuery = query.trim();
+  const normalizedQuery = trimmedQuery.toLowerCase();
+  const filteredCountries = normalizedQuery
+    ? countries.filter(country => (
+      country.name.toLowerCase().includes(normalizedQuery) ||
+      country.code.includes(trimmedQuery)
+    ))
+    : countries;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.countryModalOverlay}>
+        <View style={[styles.countryModalContent, { backgroundColor: colors.card }]}>
+          <View style={styles.countryModalHeader}>
+            <Text style={[styles.countryModalTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
+          </View>
+          <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
+            <Search color={colors.textSecondary} size={18} />
+            <TextInput
+              ref={searchInputRef}
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={placeholder}
+              placeholderTextColor={colors.textSecondary}
+              autoCorrect={false}
+              autoCapitalize="none"
+              onChangeText={handleSearchChange}
+            />
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {filteredCountries.map((country, index) => {
+              const isSelected = selectedCode === country.code;
               return (
                 <TouchableOpacity
-                  key={`${bank.code}-${bank.name}`}
+                  key={`${country.code}-${country.name}-${index}`}
                   style={[styles.countryItem, isSelected && { backgroundColor: colors.background }]}
-                  onPress={() => onSelect(bank)}
+                  onPress={() => onSelect(country.code)}
                 >
                   <View style={styles.countryItemLeft}>
-                    {bank.logo ? (
-                      <Image source={{ uri: bank.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
-                    ) : (
-                      <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
-                        <CreditCard size={18} color={colors.primary} />
-                      </View>
-                    )}
+                    <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
+                      <Globe size={18} color={colors.primary} />
+                    </View>
                     <View style={styles.countryTextBlock}>
-                      <Text style={[styles.countryName, { color: colors.text }]} numberOfLines={1}>
-                        {bank.shortName || bank.name || bank.code}
-                      </Text>
-                      <Text style={[styles.countryCodeSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {bank.code}
-                      </Text>
+                      <Text style={[styles.countryName, { color: colors.text }]} numberOfLines={1}>{country.name}</Text>
+                      <Text style={[styles.countryCodeSub, { color: colors.textSecondary }]}>+{country.code}</Text>
                     </View>
                   </View>
                   {isSelected && <Check color={colors.primary} size={20} />}
@@ -871,11 +819,114 @@ const BankPickerModal = ({
               );
             })}
           </ScrollView>
-        )}
+        </View>
       </View>
-    </View>
-  </Modal>
-);
+    </Modal>
+  );
+};
+
+const BankPickerModal = ({
+  visible,
+  colors,
+  banks,
+  loading,
+  selectedCode,
+  title,
+  placeholder,
+  onClose,
+  onSelect
+}) => {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      searchInputRef.current?.clear();
+    }
+  }, [visible]);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+  }, []);
+
+  const handleSearchChange = (text) => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => setQuery(text), 120);
+  };
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredBanks = normalizedQuery
+    ? banks.filter(bank => (
+      `${bank.name || ''} ${bank.shortName || ''} ${bank.code || ''}`.toLowerCase().includes(normalizedQuery)
+    ))
+    : banks;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.countryModalOverlay}>
+        <View style={[styles.countryModalContent, { backgroundColor: colors.card }]}>
+          <View style={styles.countryModalHeader}>
+            <Text style={[styles.countryModalTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
+          </View>
+          <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
+            <Search color={colors.textSecondary} size={18} />
+            <TextInput
+              ref={searchInputRef}
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={placeholder}
+              placeholderTextColor={colors.textSecondary}
+              autoCorrect={false}
+              autoCapitalize="none"
+              onChangeText={handleSearchChange}
+            />
+          </View>
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {filteredBanks.map((bank) => {
+                const isSelected = selectedCode === bank.code;
+                return (
+                  <TouchableOpacity
+                    key={`${bank.code}-${bank.name}`}
+                    style={[styles.countryItem, isSelected && { backgroundColor: colors.background }]}
+                    onPress={() => onSelect(bank)}
+                  >
+                    <View style={styles.countryItemLeft}>
+                      {bank.logo ? (
+                        <Image source={{ uri: bank.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
+                      ) : (
+                        <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
+                          <CreditCard size={18} color={colors.primary} />
+                        </View>
+                      )}
+                      <View style={styles.countryTextBlock}>
+                        <Text style={[styles.countryName, { color: colors.text }]} numberOfLines={1}>
+                          {bank.shortName || bank.name || bank.code}
+                        </Text>
+                        <Text style={[styles.countryCodeSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {bank.code}
+                        </Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check color={colors.primary} size={20} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
