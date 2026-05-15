@@ -73,7 +73,7 @@ export default function NotificationsScreen({ route }) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 60 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + (isSystemType ? 58 : 20) }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

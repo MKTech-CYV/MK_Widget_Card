@@ -36,7 +36,6 @@ export default function AboutScreen() {
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
   
-  // Icons
   const Mail = Icons.Mail || Icons.Info || View;
   const Heart = Icons.Heart || Icons.Info || View;
   const Smartphone = Icons.Smartphone || Icons.Info || View;
@@ -49,12 +48,11 @@ export default function AboutScreen() {
   const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-qr_only.png?amount=0&addInfo=Donate%20MK%20Widget%20Card&accountName=TRAN%20MINH%20KHOI`;
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 58 }]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header Compact */}
       <View style={styles.headerRow}>
         <Image source={APP_LOGO} style={styles.miniLogo} />
         <View style={styles.headerText}>
@@ -72,40 +70,44 @@ export default function AboutScreen() {
         <Text style={[styles.description, { color: colors.textSecondary }]}>{t('about.description')}</Text>
       </View>
 
-      {/* Features Badges */}
       <View style={styles.featureRow}>
         <FeatureItem icon={Smartphone} title={t('about.featureWidget')} colors={colors} />
         <FeatureItem icon={Zap} title={t('about.featureScan')} colors={colors} />
         <FeatureItem icon={Shield} title={t('about.featureSecurity')} colors={colors} />
       </View>
 
-      {/* Contact Developer Section */}
       <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('about.contactTitle')}</Text>
       <View style={styles.contactContainer}>
-        <ContactLink 
-          icon={Globe} 
-          label={t('about.website')} 
+        <ContactLink
+          icon={Globe}
+          label={t('about.creatorWebsite')}
+          value="tranminhkhoi.dev"
+          onPress={() => Linking.openURL('https://tranminhkhoi.dev')}
+          colors={colors}
+        />
+        <ContactLink
+          icon={Globe}
+          label={t('about.projectWebsite')}
           value="mktechvn.com"
           onPress={() => Linking.openURL('https://mktechvn.com')}
-          colors={colors} 
+          colors={colors}
         />
-        <ContactLink 
-          icon={Mail} 
-          label={t('about.email')} 
-          value="contact@tranminhkhoi.dev" 
+        <ContactLink
+          icon={Mail}
+          label={t('about.email')}
+          value="contact@tranminhkhoi.dev"
           onPress={() => Linking.openURL('mailto:contact@tranminhkhoi.dev')}
-          colors={colors} 
+          colors={colors}
         />
-        <ContactLink 
-          icon={Phone} 
-          label={t('about.hotline')} 
-          value="0988 20 40 60" 
+        <ContactLink
+          icon={Phone}
+          label={t('about.hotline')}
+          value="0988 20 40 60"
           onPress={() => Linking.openURL('tel:0988204060')}
-          colors={colors} 
+          colors={colors}
         />
       </View>
 
-      {/* Donation Section */}
       <View style={[styles.donateCard, { backgroundColor: colors.card }]}>
         <View style={styles.donateTop}>
           <View style={styles.donateInfo}>
@@ -114,7 +116,7 @@ export default function AboutScreen() {
               <Text style={[styles.donateTitle, { color: colors.text }]}>{t('about.donateTitle')}</Text>
             </View>
             <Text style={[styles.donateDesc, { color: colors.textSecondary }]}>{t('about.donateDesc')}</Text>
-            
+
             <View style={styles.bankDetails}>
               <Text style={[styles.bankName, { color: colors.text }]}>{t('about.bankName')}</Text>
               <Text style={[styles.bankAccount, { color: colors.primary }]}>0335337802</Text>
@@ -123,8 +125,8 @@ export default function AboutScreen() {
           </View>
 
           <View style={[styles.bankQrContainer, { backgroundColor: '#fff' }]}>
-            <Image 
-              source={{ uri: donateQrUrl }} 
+            <Image
+              source={{ uri: donateQrUrl }}
               style={styles.bankQrImage}
               resizeMode="contain"
             />

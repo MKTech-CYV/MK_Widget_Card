@@ -11,6 +11,7 @@ import {
   Image,
   Modal,
   FlatList,
+  RefreshControl,
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView
@@ -208,6 +209,7 @@ export default function MyCardScreen({ route }) {
   const [bankQrFailed, setBankQrFailed] = useState(false);
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
+  const [refreshingHome, setRefreshingHome] = useState(false);
   const [savingDestination, setSavingDestination] = useState(null);
   const [showPresetUpdatePicker, setShowPresetUpdatePicker] = useState(false);
   const [presetUpdateKind, setPresetUpdateKind] = useState(null);
@@ -279,6 +281,18 @@ export default function MyCardScreen({ route }) {
       setECardForm(DEFAULT_ECARD_FORM);
       setBankForm(DEFAULT_BANK_FORM);
       setEditingSection('ecard');
+    }
+  };
+
+  const handleHomeRefresh = async () => {
+    setRefreshingHome(true);
+    try {
+      await Promise.all([
+        loadData(),
+        fetchBanks(),
+      ]);
+    } finally {
+      setRefreshingHome(false);
     }
   };
 
@@ -907,6 +921,9 @@ export default function MyCardScreen({ route }) {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
+            refreshControl={
+              <RefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
+            }
           >
             {editingSection === 'bank' ? renderBankForm() : renderECardForm()}
             <Footer />
@@ -1016,6 +1033,9 @@ export default function MyCardScreen({ route }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
+          refreshControl={
+            <RefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
+          }
         >
           <Text style={[styles.screenTitle, { color: colors.text }]}>{t('myCard.myCardTitle')}</Text>
 
@@ -1048,10 +1068,10 @@ export default function MyCardScreen({ route }) {
                 )
               ) : (
                 <View style={[styles.cardAvatarPlaceholder, { backgroundColor: `${colors.primary}14` }]}>
-                  <Landmark color={colors.primary} size={34} />
+                  <Image source={APP_LOGO} style={styles.cardAvatarLogo} />
                 </View>
               )}
-              <View style={styles.cardActionRow}>
+              <View style={styles.cardActionStack}>
                 {Boolean(user?.id) && (
                   <TouchableOpacity
                     style={[styles.changePresetButton, { backgroundColor: colors.background }]}
@@ -1063,22 +1083,24 @@ export default function MyCardScreen({ route }) {
                     <Text style={[styles.changePresetText, { color: colors.primary }]}>{t('myCard.changePreset')}</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={[styles.cardIconButton, { backgroundColor: colors.background }]}
-                  onPress={activeTab === 'bank' ? shareBankQr : shareECard}
-                  accessibilityRole="button"
-                  accessibilityLabel={activeTab === 'bank' ? t('myCard.shareBankQr') : t('myCard.shareECard')}
-                >
-                  <Share2 color={colors.primary} size={18} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.cardIconButton, { backgroundColor: colors.background }]}
-                  onPress={() => setEditingSection(activeTab === 'bank' ? 'bank' : 'ecard')}
-                  accessibilityRole="button"
-                  accessibilityLabel={activeTab === 'bank' ? t('myCard.editBankButton') : t('myCard.editECardButton')}
-                >
-                  <Edit2 color={colors.primary} size={18} />
-                </TouchableOpacity>
+                <View style={styles.cardActionRow}>
+                  <TouchableOpacity
+                    style={[styles.cardIconButton, { backgroundColor: colors.background }]}
+                    onPress={activeTab === 'bank' ? shareBankQr : shareECard}
+                    accessibilityRole="button"
+                    accessibilityLabel={activeTab === 'bank' ? t('myCard.shareBankQr') : t('myCard.shareECard')}
+                  >
+                    <Share2 color={colors.primary} size={18} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cardIconButton, { backgroundColor: colors.background }]}
+                    onPress={() => setEditingSection(activeTab === 'bank' ? 'bank' : 'ecard')}
+                    accessibilityRole="button"
+                    accessibilityLabel={activeTab === 'bank' ? t('myCard.editBankButton') : t('myCard.editECardButton')}
+                  >
+                    <Edit2 color={colors.primary} size={18} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
             {activeTab === 'contact' ? (
@@ -1683,7 +1705,8 @@ const styles = StyleSheet.create({
   saveFab: { position: 'absolute', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14, elevation: 8 },
   digitalCard: { borderRadius: 32, padding: 25, width: '100%', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 30, elevation: 10, position: 'relative' },
   cardTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  cardActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 14 },
+  cardActionStack: { alignItems: 'flex-end', gap: 8, marginLeft: 14 },
+  cardActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cardIconButton: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', zIndex: 3, elevation: 4 },
   changePresetButton: { minHeight: 42, borderRadius: 21, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', zIndex: 3, elevation: 4 },
   changePresetText: { marginLeft: 5, fontSize: 12, fontWeight: '900' },
@@ -1692,6 +1715,7 @@ const styles = StyleSheet.create({
   cardAvatarPlaceholder: { width: 70, height: 70, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   headerInfo: { width: '100%' },
   cardName: { fontSize: 24, lineHeight: 30, fontWeight: 'bold' },
+  cardAvatarLogo: { width: 48, height: 48, borderRadius: 14 },
   cardTitle: { fontSize: 14, marginTop: 2, lineHeight: 20 },
   cardCompany: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginVertical: 15 },
