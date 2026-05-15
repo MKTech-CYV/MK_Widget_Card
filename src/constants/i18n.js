@@ -90,7 +90,7 @@ const translations = {
       bankName: 'MB Bank',
       accountName: 'TRAN MINH KHOI',
       aiBadge: '100% AI',
-      appVersion: 'v1.0.0 • 2026',
+      appVersion: 'v2.0.0 • 2026',
     },
     myCard: {
       title: 'eCard của tôi',
@@ -426,7 +426,7 @@ const translations = {
       bankName: 'MB Bank',
       accountName: 'TRAN MINH KHOI',
       aiBadge: '100% AI',
-      appVersion: 'v1.0.0 • 2026',
+      appVersion: 'v2.0.0 • 2026',
     },
     myCard: {
       title: 'My eCard',
