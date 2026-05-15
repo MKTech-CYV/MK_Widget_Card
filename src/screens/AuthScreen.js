@@ -21,7 +21,7 @@ import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
 import { getUserProfile } from '../utils/userProfile';
-import { uploadImageToBucket } from '../services/SupabaseStorageService';
+import { deleteStorageFile, uploadImageToBucket } from '../services/SupabaseStorageService';
 import { updateProfileAvatar } from '../services/ProfileService';
 
 const formatAccountDate = (value) => {
@@ -107,14 +107,22 @@ export default function AuthScreen() {
 
     if (result.canceled || !result.assets?.length) return;
 
-    const upload = await uploadImageToBucket({
-      bucket: 'avatars',
-      userId: user.id,
-      asset: result.assets[0],
-      prefix: 'avatar',
-    });
-    const nextProfile = await updateProfileAvatar(user.id, upload.publicUrl);
-    await cacheAccountProfile(nextProfile);
+    let upload = null;
+    try {
+      upload = await uploadImageToBucket({
+        bucket: 'avatars',
+        userId: user.id,
+        asset: result.assets[0],
+        prefix: 'avatar',
+      });
+      const nextProfile = await updateProfileAvatar(user.id, upload.publicUrl);
+      await cacheAccountProfile(nextProfile);
+    } catch (error) {
+      if (upload?.path) {
+        await deleteStorageFile({ bucket: 'avatars', path: upload.path }).catch(() => null);
+      }
+      throw error;
+    }
   });
 
   if (!isAuthReady) {
