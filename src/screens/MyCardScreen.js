@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -204,7 +204,6 @@ export default function MyCardScreen({ route }) {
   const [presetUpdateItems, setPresetUpdateItems] = useState([]);
   const [pendingPresetData, setPendingPresetData] = useState(null);
   const [presetUpdateActionId, setPresetUpdateActionId] = useState(null);
-  const [searchQuery, setSearchBarQuery] = useState('');
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
 
@@ -535,17 +534,6 @@ export default function MyCardScreen({ route }) {
     setBankQrLoading(Boolean(bankQrUrl));
   }, [bankQrUrl]);
 
-  const filteredBanks = banks.filter(bank => (
-    `${bank.name || ''}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    `${bank.shortName || ''}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    `${bank.code || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
-  ));
-
-  const filteredCountries = SORTED_COUNTRIES.filter(country => (
-    country.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    country.code.includes(searchQuery)
-  ));
-
   const openCountryPicker = (target) => {
     setCountryPickerTarget(target);
     setShowCountryModal(true);
@@ -732,67 +720,6 @@ export default function MyCardScreen({ route }) {
     </View>
   );
 
-  const SelectionModal = ({ visible, onClose, data, onSelect, title, selectedId, type }) => (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose}><X color={colors.textSecondary} size={24} /></TouchableOpacity>
-          </View>
-
-          <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
-            <Search color={colors.textSecondary} size={18} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder={type === 'bank' ? t('myCard.searchPlaceholderBank') : t('myCard.searchPlaceholderCountry')}
-              placeholderTextColor={colors.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchBarQuery}
-            />
-          </View>
-
-          {loadingBanks && type === 'bank' ? (
-            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
-          ) : (
-            <FlatList
-              data={data}
-              keyExtractor={item => `${type}-${item.code}-${item.id || item.name}`}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => {
-                const id = item.code;
-                const isSelected = selectedId === id;
-                return (
-                  <TouchableOpacity
-                    style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]}
-                    onPress={() => { onSelect(id); onClose(); setSearchBarQuery(''); }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                      {type === 'country' ? (
-                        <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
-                          <Globe size={18} color={colors.primary} />
-                        </View>
-                      ) : (
-                        <Image source={{ uri: item.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.modalItemText, { color: colors.text }]} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>{type === 'country' ? `+${id}` : id}</Text>
-                      </View>
-                    </View>
-                    {isSelected && <Check color={colors.primary} size={20} />}
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-
   if (isFormMode) {
     const saveLabel = editingSection === 'bank' ? t('myCard.saveBank') : t('myCard.saveECard');
     const onSave = editingSection === 'bank' ? handleSaveBank : handleSaveECard;
@@ -891,21 +818,26 @@ export default function MyCardScreen({ route }) {
         />
         <SelectionModal
           visible={showCountryModal}
-          onClose={() => { setShowCountryModal(false); setSearchBarQuery(''); }}
-          data={filteredCountries}
+          onClose={() => setShowCountryModal(false)}
+          data={SORTED_COUNTRIES}
           onSelect={handleCountrySelect}
           title={t('myCard.chooseCountry')}
           selectedId={selectedCountryCode}
           type="country"
+          colors={colors}
+          t={t}
         />
         <SelectionModal
           visible={showBankModal}
-          onClose={() => { setShowBankModal(false); setSearchBarQuery(''); }}
-          data={filteredBanks}
+          onClose={() => setShowBankModal(false)}
+          data={banks}
           onSelect={code => setBankForm({ ...bankForm, bankName: code })}
           title={t('myCard.chooseBank')}
           selectedId={bankForm.bankName}
           type="bank"
+          loading={loadingBanks}
+          colors={colors}
+          t={t}
         />
       </View>
     );
@@ -1145,6 +1077,121 @@ const InputField = ({
     />
   </View>
 );
+
+const SelectionModal = ({
+  visible,
+  onClose,
+  data,
+  onSelect,
+  title,
+  selectedId,
+  type,
+  loading = false,
+  colors,
+  t
+}) => {
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef(null);
+  const searchDebounceRef = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      setQuery('');
+      searchInputRef.current?.clear();
+    }
+  }, [visible, type]);
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+  }, []);
+
+  const handleSearchChange = (text) => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => setQuery(text), 120);
+  };
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredData = normalizedQuery
+    ? data.filter(item => (
+      type === 'bank'
+        ? `${item.name || ''} ${item.shortName || ''} ${item.code || ''}`.toLowerCase().includes(normalizedQuery)
+        : item.name.toLowerCase().includes(normalizedQuery) || item.code.includes(query.trim())
+    ))
+    : data;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X color={colors.textSecondary} size={24} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.searchBar, { backgroundColor: colors.background }]}>
+            <Search color={colors.textSecondary} size={18} />
+            <TextInput
+              ref={searchInputRef}
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={type === 'bank' ? t('myCard.searchPlaceholderBank') : t('myCard.searchPlaceholderCountry')}
+              placeholderTextColor={colors.textSecondary}
+              autoCorrect={false}
+              autoCapitalize="none"
+              onChangeText={handleSearchChange}
+            />
+          </View>
+
+          {loading && type === 'bank' ? (
+            <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
+          ) : (
+            <FlatList
+              data={filteredData}
+              keyExtractor={item => `${type}-${item.code}-${item.id || item.name}`}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const id = item.code;
+                const isSelected = selectedId === id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.modalItem, isSelected && { backgroundColor: colors.background }]}
+                    onPress={() => {
+                      onSelect(id);
+                      onClose();
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      {type === 'country' ? (
+                        <View style={[styles.countryIconBox, { backgroundColor: colors.background }]}>
+                          <Globe size={18} color={colors.primary} />
+                        </View>
+                      ) : (
+                        <Image source={{ uri: item.logo }} style={styles.bankLogoSmall} resizeMode="contain" />
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.modalItemText, { color: colors.text }]} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>{type === 'country' ? `+${id}` : id}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check color={colors.primary} size={20} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const PreviewDetail = ({ icon: Icon, label, value, colors }) => {
   if (!value) return null;
