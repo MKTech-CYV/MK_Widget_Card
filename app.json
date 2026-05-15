@@ -3,7 +3,7 @@
     "name": "MK Widget Card",
     "slug": "MK_Widget_Card",
     "scheme": "mkwidgetcard",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -33,7 +33,7 @@
     ],
     "android": {
       "package": "com.mktech.widgetcard",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -54,7 +54,7 @@
       }
     },
     "owner": "mktechvn",
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": "2.0.0",
     "updates": {
       "url": "https://u.expo.dev/fb9ff7c0-83bf-4f70-9970-5ef3bdff5300"
     }
