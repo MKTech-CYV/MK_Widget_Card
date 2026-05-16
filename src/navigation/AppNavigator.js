@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Bell, CircleUser, QrCode, User } from 'lucide-react-native';
+import { Bell, CircleUser, QrCode, Settings as SettingsIcon, User } from 'lucide-react-native';
 
 import MyCardScreen from '../screens/MyCardScreen';
 import ScanScreen from '../screens/ScanScreen';
@@ -24,6 +24,7 @@ const Stack = createNativeStackNavigator();
 const TAB_LABEL_KEYS = {
   MyCardTab: 'nav.myCard',
   NotificationsTab: 'nav.notifications',
+  SettingsTab: 'nav.settings',
   AccountTab: 'nav.account',
 };
 
@@ -38,11 +39,32 @@ function AccountStack() {
     }}>
       <Stack.Screen name="AccountMain" component={AccountScreen} />
       <Stack.Screen name="AccountDetail" component={AuthScreen} />
-      <Stack.Screen name="AccountSettings" component={AppSettingsScreen} />
-      <Stack.Screen name="AccountPresets" component={AccountPresetsScreen} />
-      <Stack.Screen name="SystemNotifications" component={NotificationsScreen} initialParams={{ type: 'system' }} />
-      <Stack.Screen name="About" component={AboutScreen} />
-      <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="AccountSettings" component={AppSettingsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="AccountPresets" component={AccountPresetsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="SystemNotifications" component={NotificationsScreen} initialParams={{ type: 'system' }} options={{ headerShown: false }} />
+      <Stack.Screen name="About" component={AboutScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Terms" component={TermsScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+}
+
+function SettingsStack() {
+  const { colors } = useTheme();
+
+  return (
+    <Stack.Navigator screenOptions={{
+      headerTitle: '',
+      headerTransparent: true,
+      headerTintColor: colors.primary,
+      contentStyle: { backgroundColor: colors.background }
+    }}>
+      <Stack.Screen
+        name="SettingsMain"
+        component={AppSettingsScreen}
+        initialParams={{ showBack: false }}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="SystemNotifications" component={NotificationsScreen} initialParams={{ type: 'system' }} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
@@ -101,6 +123,7 @@ export default function AppNavigator() {
             if (route.name === 'MyCardTab') return <User color={color} size={size} />;
             if (route.name === 'NotificationsTab') return <Bell color={color} size={size} />;
             if (route.name === 'ScanTab') return <QrTabIcon focused={focused} colors={colors} isDark={isDark} />;
+            if (route.name === 'SettingsTab') return <SettingsIcon color={color} size={size} />;
             if (route.name === 'AccountTab') return <CircleUser color={color} size={size} />;
             return null;
           },
@@ -121,6 +144,10 @@ export default function AppNavigator() {
         <Tab.Screen
           name="AccountTab"
           component={AccountStack}
+        />
+        <Tab.Screen
+          name="SettingsTab"
+          component={SettingsStack}
         />
       </Tab.Navigator>
       <QuickTourModal visible={showTour} onFinish={async () => { setShowTour(false); await completeQuickTour(); }} />

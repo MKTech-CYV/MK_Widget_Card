@@ -34,3 +34,17 @@ export const updateProfileAvatar = async (userId, avatarUrl) => {
 
   return data;
 };
+
+export const updateProfilePremium = async (userId, isPremium = true) => {
+  if (!isSupabaseConfigured || !userId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ is_premium: isPremium })
+    .eq('id', userId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+};

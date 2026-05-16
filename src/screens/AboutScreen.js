@@ -1,8 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Image, Dimensions, Linking } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Dimensions, Linking } from 'react-native';
 import * as Icons from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, Spacing } from '../constants/Theme';
+import { useTheme } from '../constants/Theme';
+import ScreenScaffold from '../components/ScreenScaffold';
 import Footer from '../components/Footer';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
@@ -30,9 +30,8 @@ const ContactLink = ({ icon: Icon, label, value, onPress, colors }) => (
   </TouchableOpacity>
 );
 
-export default function AboutScreen() {
+export default function AboutScreen({ navigation }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
   
@@ -48,10 +47,11 @@ export default function AboutScreen() {
   const donateQrUrl = `https://img.vietqr.io/image/MB-0335337802-qr_only.png?amount=0&addInfo=Donate%20MK%20Widget%20Card&accountName=TRAN%20MINH%20KHOI`;
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 58 }]}
-      showsVerticalScrollIndicator={false}
+    <ScreenScaffold
+      navigation={navigation}
+      showBack
+      title={t('about.title')}
+      footer={<Footer />}
     >
       <View style={styles.headerRow}>
         <Image source={APP_LOGO} style={styles.miniLogo} />
@@ -134,14 +134,11 @@ export default function AboutScreen() {
         </View>
       </View>
 
-      <Footer />
-    </ScrollView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { padding: Spacing.lg },
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   miniLogo: { width: 56, height: 56, borderRadius: 14 },
   headerText: { marginLeft: 15, flex: 1 },
@@ -155,7 +152,7 @@ const styles = StyleSheet.create({
   featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 },
   featureBadge: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flex: 0.31, justifyContent: 'center' },
   featureBadgeText: { fontSize: 12, fontWeight: '700', marginLeft: 6 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 0 },
   contactContainer: { marginBottom: 30 },
   contactLink: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, marginBottom: 10, shadowOpacity: 0.02, shadowRadius: 10, elevation: 1 },
   contactLinkIcon: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },

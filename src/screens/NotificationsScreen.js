@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Bell, ExternalLink, X } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, Spacing } from '../constants/Theme';
+import { useTheme } from '../constants/Theme';
+import ScreenScaffold from '../components/ScreenScaffold';
 import Footer from '../components/Footer';
 import { fetchPublicNotifications } from '../services/NotificationService';
 import { StorageService } from '../services/StorageService';
@@ -18,9 +18,8 @@ const formatTime = (ts) => {
   }
 };
 
-export default function NotificationsScreen({ route }) {
+export default function NotificationsScreen({ navigation, route }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = useCallback((key) => getTranslation(language, key), [language]);
   const notificationType = route?.params?.type === 'system' ? 'system' : 'normal';
@@ -70,27 +69,21 @@ export default function NotificationsScreen({ route }) {
     load();
   }, [load]);
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + (isSystemType ? 58 : 20) }]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            tintColor={colors.primary}
-            onRefresh={() => {
-              setRefreshing(true);
-              load();
-            }}
-          />
-        }
-      >
-        <View style={styles.headerRow}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>
-            {isSystemType ? t('notifications.systemTitle') : t('notifications.title')}
-          </Text>
-        </View>
+  const handleRefresh = () => {
+    setRefreshing(true);
+    load();
+  };
 
+  return (
+    <>
+      <ScreenScaffold
+        navigation={navigation}
+        showBack={isSystemType}
+        title={isSystemType ? t('notifications.systemTitle') : t('notifications.title')}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        footer={<Footer />}
+      >
         {loading ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <ActivityIndicator color={colors.primary} />
@@ -127,16 +120,14 @@ export default function NotificationsScreen({ route }) {
             ))}
           </View>
         )}
-
-        <Footer />
-      </ScrollView>
+      </ScreenScaffold>
       <NotificationDetailModal
         notification={selectedNotification}
         colors={colors}
         t={t}
         onClose={() => setSelectedNotification(null)}
       />
-    </View>
+    </>
   );
 }
 
@@ -186,11 +177,6 @@ const NotificationDetailModal = ({ notification, colors, t, onClose }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { padding: Spacing.lg },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.lg },
-  screenTitle: { fontSize: 32, fontWeight: '800' },
-
   emptyCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
   emptyTitle: { marginTop: 12, fontSize: 16, fontWeight: '800' },
   emptyDesc: { marginTop: 6, fontSize: 13, lineHeight: 18, textAlign: 'center' },

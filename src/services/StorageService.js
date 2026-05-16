@@ -171,6 +171,15 @@ export const StorageService = {
     return data ? JSON.parse(data) : null;
   },
 
+  setCachedRemoteSettings: async (settings) => {
+    await DefaultPreference.set('remoteSettings', JSON.stringify(settings || {}));
+  },
+
+  getCachedRemoteSettings: async () => {
+    const data = await DefaultPreference.get('remoteSettings');
+    return data ? JSON.parse(data) : null;
+  },
+
   setAppPreferences: async (data) => {
     await DefaultPreference.set('appPreferences', JSON.stringify(data));
   },
