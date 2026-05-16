@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { Camera, Check, ChevronDown, CreditCard, Globe, Pencil, Save, Search, Share2, Trash2, User as UserIcon, X } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenScaffold from '../components/ScreenScaffold';
 import Footer from '../components/Footer';
-import { useTheme, Spacing } from '../constants/Theme';
+import { useTheme } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
@@ -151,7 +151,6 @@ const bankEditFormToPayload = (form = {}) => ({
 
 export default function AccountPresetsScreen({ navigation, route }) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const { user, isAuthReady } = useAuth();
   const t = useCallback((key) => getTranslation(language, key), [language]);
@@ -388,20 +387,16 @@ export default function AccountPresetsScreen({ navigation, route }) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 58 }]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} tintColor={colors.primary} onRefresh={handleRefresh} />
-        }
+    <>
+      <ScreenScaffold
+        navigation={navigation}
+        showBack
+        title={isBank ? t('accountPresets.bankTitle') : t('accountPresets.ecardTitle')}
+        subtitle={isBank ? t('accountPresets.bankDesc') : t('accountPresets.ecardDesc')}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        footer={<Footer />}
       >
-        <Text style={[styles.screenTitle, { color: colors.text }]}>
-          {isBank ? t('accountPresets.bankTitle') : t('accountPresets.ecardTitle')}
-        </Text>
-        <Text style={[styles.screenDesc, { color: colors.textSecondary }]}>
-          {isBank ? t('accountPresets.bankDesc') : t('accountPresets.ecardDesc')}
-        </Text>
-
         {!user ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('auth.signInPrompt')}</Text>
@@ -433,9 +428,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
             ))}
           </View>
         )}
-
-        <Footer />
-      </ScrollView>
+      </ScreenScaffold>
       <PresetEditModal
         visible={Boolean(editingItem)}
         isBank={isBank}
@@ -453,7 +446,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
         }))}
         onSave={handleSaveEdit}
       />
-    </View>
+    </>
   );
 }
 
@@ -989,11 +982,7 @@ const BankPickerModal = ({
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   centerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scrollContent: { padding: Spacing.lg },
-  screenTitle: { fontSize: 30, fontWeight: '900' },
-  screenDesc: { fontSize: 14, lineHeight: 20, fontWeight: '600', marginTop: 6, marginBottom: Spacing.lg },
   emptyCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
   emptyTitle: { fontSize: 17, fontWeight: '900', textAlign: 'center' },
   emptyDesc: { marginTop: 6, fontSize: 13, lineHeight: 19, fontWeight: '600', textAlign: 'center' },

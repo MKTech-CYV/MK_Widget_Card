@@ -4,7 +4,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,16 +12,20 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Globe2, LogIn, LogOut, Mail, ShieldCheck } from 'lucide-react-native';
+import { Camera, Crown, Globe2, LogIn, LogOut, Mail, ShieldCheck } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileAvatar from '../components/ProfileAvatar';
+import AppRefreshControl from '../components/AppRefreshControl';
 import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
+import { useRemoteSettings } from '../context/RemoteSettingsContext';
+import { useRevenueCat } from '../context/RevenueCatContext';
 import { getTranslation } from '../constants/i18n';
 import { getUserProfile } from '../utils/userProfile';
 import { deleteStorageFile, uploadImageToBucket } from '../services/SupabaseStorageService';
 import { updateProfileAvatar } from '../services/ProfileService';
+import { REVENUECAT_NATIVE_MODULE_UNAVAILABLE } from '../services/RevenueCatService';
 
 const formatAccountDate = (value) => {
   if (!value) return '';
@@ -47,11 +50,16 @@ export default function AuthScreen() {
     cacheAccountProfile,
     signOut,
   } = useAuth();
+  const { paymentEnabled, refreshRemoteSettings } = useRemoteSettings();
+  const { isPremium, openCustomerCenter, openPaywall, refreshCustomerInfo } = useRevenueCat();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const profile = getUserProfile(user, accountProfile);
+  const profile = getUserProfile(user, {
+    ...(accountProfile || {}),
+    is_premium: Boolean(accountProfile?.is_premium || isPremium),
+  });
   const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
   const createdAt = formatAccountDate(user?.created_at);
   const lastSignInAt = formatAccountDate(user?.last_sign_in_at);
@@ -62,7 +70,12 @@ export default function AuthScreen() {
     try {
       await fn();
     } catch (error) {
-      Alert.alert(t('common.error'), error?.message || t('auth.genericError'));
+      Alert.alert(
+        t('common.error'),
+        error?.code === REVENUECAT_NATIVE_MODULE_UNAVAILABLE
+          ? t('revenueCat.paywallUnavailable')
+          : error?.message || t('auth.genericError')
+      );
     } finally {
       setLoadingAction(null);
     }
@@ -80,13 +93,29 @@ export default function AuthScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refreshSession?.();
+      await Promise.all([
+        refreshSession?.(),
+        refreshRemoteSettings?.(),
+        refreshCustomerInfo?.(),
+      ]);
     } catch {
       // Keep the current account view if refreshing the session fails.
     } finally {
       setRefreshing(false);
     }
   };
+
+  const handlePremiumPress = () => runAuthAction('premium', async () => {
+    if (isPremium) {
+      await openCustomerCenter();
+      return;
+    }
+
+    const result = await openPaywall({ onlyIfNeeded: true });
+    if (result?.entitlementActive) {
+      Alert.alert(t('common.success'), t('revenueCat.purchaseSuccess'));
+    }
+  });
 
   const handleAvatarUpload = () => runAuthAction('avatar', async () => {
     if (!user?.id) return;
@@ -139,7 +168,7 @@ export default function AuthScreen() {
         style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 60 }]}
         refreshControl={
-          <RefreshControl
+          <AppRefreshControl
             refreshing={refreshing}
             tintColor={colors.primary}
             onRefresh={handleRefresh}
@@ -242,6 +271,23 @@ export default function AuthScreen() {
           </View>
         </View>
 
+        {paymentEnabled && (
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: isPremium ? colors.success : colors.primary }]}
+            onPress={handlePremiumPress}
+            disabled={Boolean(loadingAction)}
+          >
+            {loadingAction === 'premium' ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Crown color="#fff" size={18} />
+            )}
+            <Text style={styles.primaryButtonText}>
+              {isPremium ? t('revenueCat.manageTitle') : t('revenueCat.upgradeTitle')}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={[styles.dangerButton, { backgroundColor: `${colors.error}14` }]}
           onPress={() => runAuthAction('signout', signOut)}
@@ -266,7 +312,7 @@ export default function AuthScreen() {
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 60 }]}
         refreshControl={
-          <RefreshControl
+          <AppRefreshControl
             refreshing={refreshing}
             tintColor={colors.primary}
             onRefresh={handleRefresh}

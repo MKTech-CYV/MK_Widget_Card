@@ -1,13 +1,19 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ChevronRight, Info, Landmark, LogIn, Settings as SettingsIcon, ShieldCheck, User as UserIcon } from 'lucide-react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ChevronRight, Crown, Info, Landmark, LogIn, RefreshCcw, ShieldCheck, User as UserIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileAvatar from '../components/ProfileAvatar';
+import AppRefreshControl from '../components/AppRefreshControl';
+import { SettingsItem, SettingsSection } from '../components/SettingsList';
 import Footer from '../components/Footer';
 import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
+import { useRemoteSettings } from '../context/RemoteSettingsContext';
+import { useRevenueCat } from '../context/RevenueCatContext';
 import { getTranslation } from '../constants/i18n';
+import { REVENUECAT_ENTITLEMENT_ID } from '../constants/revenueCat';
+import { REVENUECAT_NATIVE_MODULE_UNAVAILABLE } from '../services/RevenueCatService';
 import { getUserProfile } from '../utils/userProfile';
 
 export default function AccountScreen({ navigation }) {
@@ -15,25 +21,80 @@ export default function AccountScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const { user, accountProfile, isAuthReady, refreshSession } = useAuth();
+  const { paymentEnabled, refreshRemoteSettings } = useRemoteSettings();
+  const { isPremium, openCustomerCenter, openPaywall, restorePurchases } = useRevenueCat();
   const [refreshing, setRefreshing] = useState(false);
+  const [premiumAction, setPremiumAction] = useState(null);
   const t = (key) => getTranslation(language, key);
-  const profile = getUserProfile(user, accountProfile);
+  const profile = getUserProfile(user, {
+    ...(accountProfile || {}),
+    is_premium: Boolean(accountProfile?.is_premium || isPremium),
+  });
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshSession?.().catch(() => null);
+      await Promise.all([
+        refreshSession?.().catch(() => null),
+        refreshRemoteSettings?.().catch(() => null),
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshSession]);
+  }, [refreshRemoteSettings, refreshSession]);
+
+  const runPremiumAction = useCallback(async (action, fn) => {
+    setPremiumAction(action);
+    try {
+      await fn();
+    } catch (error) {
+      Alert.alert(
+        t('common.error'),
+        error?.code === REVENUECAT_NATIVE_MODULE_UNAVAILABLE
+          ? t('revenueCat.paywallUnavailable')
+          : error?.message || t('revenueCat.paywallUnavailable')
+      );
+    } finally {
+      setPremiumAction(null);
+    }
+  }, [t]);
+
+  const handlePremiumPress = useCallback(() => {
+    if (!user) {
+      navigation.navigate('AccountDetail');
+      return;
+    }
+
+    runPremiumAction('premium', async () => {
+      if (isPremium) {
+        await openCustomerCenter();
+        return;
+      }
+
+      const result = await openPaywall({ onlyIfNeeded: true });
+      if (result?.entitlementActive) {
+        Alert.alert(t('common.success'), t('revenueCat.purchaseSuccess'));
+      }
+    });
+  }, [isPremium, navigation, openCustomerCenter, openPaywall, runPremiumAction, t, user]);
+
+  const handleRestorePurchases = useCallback(() => {
+    runPremiumAction('restore', async () => {
+      const info = await restorePurchases();
+      const active = Boolean(info?.entitlements?.active?.[REVENUECAT_ENTITLEMENT_ID]);
+      Alert.alert(
+        active ? t('common.success') : t('revenueCat.upgradeTitle'),
+        active ? t('revenueCat.restoreSuccess') : t('revenueCat.restoreNoEntitlement')
+      );
+    });
+  }, [restorePurchases, runPremiumAction, t]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}
         refreshControl={
-          <RefreshControl
+          <AppRefreshControl
             refreshing={refreshing}
             tintColor={colors.primary}
             onRefresh={handleRefresh}
@@ -49,58 +110,67 @@ export default function AccountScreen({ navigation }) {
           onPress={() => navigation.navigate('AccountDetail')}
         />
 
+        {user && paymentEnabled && (
+          <SettingsSection title={t('revenueCat.sectionTitle')} colors={colors}>
+            <SettingsItem
+              icon={<Crown size={22} color={isPremium ? colors.success : colors.primary} />}
+              label={isPremium ? t('revenueCat.manageTitle') : t('revenueCat.upgradeTitle')}
+              subtitle={isPremium ? t('revenueCat.manageDesc') : t('revenueCat.upgradeDesc')}
+              right={premiumAction === 'premium' ? <ActivityIndicator color={colors.primary} /> : null}
+              onPress={handlePremiumPress}
+              colors={colors}
+            />
+            <SettingsItem
+              icon={<RefreshCcw size={22} color={colors.primary} />}
+              label={t('revenueCat.restorePurchases')}
+              subtitle={t('revenueCat.restoreDesc')}
+              right={premiumAction === 'restore' ? <ActivityIndicator color={colors.primary} /> : null}
+              onPress={handleRestorePurchases}
+              colors={colors}
+            />
+          </SettingsSection>
+        )}
+
         {user && (
-          <View style={[styles.section, { backgroundColor: colors.card }]}>
-            <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('accountPresets.sectionTitle')}</Text>
-            <SettingItem
+          <SettingsSection title={t('accountPresets.sectionTitle')} colors={colors}>
+            <SettingsItem
               icon={<UserIcon size={22} color={colors.primary} />}
               label={t('accountPresets.ecardList')}
               subtitle={t('accountPresets.ecardListDesc')}
               onPress={() => navigation.navigate('AccountPresets', { kind: 'ecard' })}
               colors={colors}
             />
-            <SettingItem
+            <SettingsItem
               icon={<Landmark size={22} color={colors.primary} />}
               label={t('accountPresets.bankList')}
               subtitle={t('accountPresets.bankListDesc')}
               onPress={() => navigation.navigate('AccountPresets', { kind: 'bank' })}
               colors={colors}
             />
-          </View>
+          </SettingsSection>
         )}
 
-        <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.preferencesSection')}</Text>
-          <SettingItem
-            icon={<SettingsIcon size={22} color={colors.primary} />}
-            label={t('auth.settingsShortcut')}
-            subtitle={t('auth.settingsShortcutDesc')}
-            onPress={() => navigation.navigate('AccountSettings')}
-            colors={colors}
-          />
-        </View>
-
-        <View style={[styles.section, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{t('settings.legalSection')}</Text>
-          <SettingItem
+        <SettingsSection title={t('settings.legalSection')} colors={colors}>
+          <SettingsItem
             icon={<Info size={22} color={colors.primary} />}
             label={t('settings.about')}
             onPress={() => navigation.navigate('About')}
             colors={colors}
           />
-          <SettingItem
+          <SettingsItem
             icon={<ShieldCheck size={22} color={colors.success} />}
             label={t('settings.terms')}
             onPress={() => navigation.navigate('Terms')}
             colors={colors}
           />
-          <SettingItem
+          <SettingsItem
             icon={<Info size={22} color={colors.textSecondary} />}
             label={t('settings.versionLabel')}
             right={<Text style={[styles.versionText, { color: colors.textSecondary }]}>{getTranslation(language, 'about.appVersion')}</Text>}
             colors={colors}
+            showChevron={false}
           />
-        </View>
+        </SettingsSection>
 
         <Footer />
       </ScrollView>
@@ -136,31 +206,6 @@ const AccountEntryCard = ({ colors, profile, user, isAuthReady, t, onPress }) =>
   </TouchableOpacity>
 );
 
-const SettingItem = ({ icon, label, right, subtitle, onPress, colors }) => (
-  <TouchableOpacity
-    style={[styles.settingItem, { borderBottomColor: colors.background }]}
-    onPress={onPress}
-    disabled={!onPress}
-    activeOpacity={onPress ? 0.82 : 1}
-  >
-    <View style={styles.settingLeft}>
-      <View style={[styles.iconBox, { backgroundColor: colors.background }]}>{icon}</View>
-      <View style={styles.settingTextBlock}>
-        <Text style={[styles.settingLabel, { color: colors.text }]} numberOfLines={1}>{label}</Text>
-        {!!subtitle && (
-          <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
-            {subtitle}
-          </Text>
-        )}
-      </View>
-    </View>
-    <View style={styles.settingRight}>
-      {right}
-      {onPress && <ChevronRight color={colors.border} size={20} />}
-    </View>
-  </TouchableOpacity>
-);
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { padding: Spacing.lg },
@@ -170,14 +215,5 @@ const styles = StyleSheet.create({
   accountEyebrow: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 4 },
   accountName: { fontSize: 18, fontWeight: '900' },
   accountEmail: { fontSize: 13, fontWeight: '700', marginTop: 3 },
-  section: { borderRadius: 24, marginBottom: Spacing.lg, overflow: 'hidden' },
-  sectionHeader: { fontSize: 12, fontWeight: '800', marginLeft: 18, marginBottom: 8, marginTop: 16, textTransform: 'uppercase' },
-  settingItem: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: 0.5 },
-  settingLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center' },
-  settingRight: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
-  iconBox: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  settingLabel: { fontSize: 16, fontWeight: '700', lineHeight: 21 },
-  settingTextBlock: { flex: 1, minWidth: 0, minHeight: 38, justifyContent: 'center' },
-  settingSubtitle: { marginTop: 2, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   versionText: { fontSize: 15, fontWeight: '700' },
 });

@@ -11,7 +11,6 @@ import {
   Image,
   Modal,
   FlatList,
-  RefreshControl,
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView
@@ -42,8 +41,11 @@ import {
 import { useTheme, Spacing } from '../constants/Theme';
 import { StorageService } from '../services/StorageService';
 import Footer from '../components/Footer';
+import AppRefreshControl from '../components/AppRefreshControl';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
+import { useRemoteSettings } from '../context/RemoteSettingsContext';
+import { useRevenueCat } from '../context/RevenueCatContext';
 import { getTranslation } from '../constants/i18n';
 import {
   bankQrPresetToLocalData,
@@ -61,6 +63,7 @@ import {
   updateECardPreset
 } from '../services/AccountPresetService';
 import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/SupabaseStorageService';
+import { REVENUECAT_NATIVE_MODULE_UNAVAILABLE } from '../services/RevenueCatService';
 import {
   buildVCard,
   formatInternationalPhone,
@@ -197,6 +200,8 @@ export default function MyCardScreen({ route }) {
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const { user } = useAuth();
+  const { paymentEnabled, refreshRemoteSettings } = useRemoteSettings();
+  const { openPaywall } = useRevenueCat();
   const t = (key) => getTranslation(language, key);
   const [userData, setUserData] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
@@ -290,6 +295,7 @@ export default function MyCardScreen({ route }) {
       await Promise.all([
         loadData(),
         fetchBanks(),
+        refreshRemoteSettings?.(),
       ]);
     } finally {
       setRefreshingHome(false);
@@ -372,7 +378,34 @@ export default function MyCardScreen({ route }) {
 
   const showAccountPresetSaveError = (error) => {
     if (isPresetLimitPolicyError(error)) {
-      Alert.alert(t('myCard.premiumPresetLimitTitle'), t('myCard.premiumPresetLimitMessage'));
+      const actions = [{ text: t('common.close'), style: 'cancel' }];
+
+      if (paymentEnabled) {
+        actions.push({
+          text: t('myCard.premiumPresetLimitAction'),
+          onPress: async () => {
+            try {
+              const result = await openPaywall({ onlyIfNeeded: true });
+              if (result?.entitlementActive) {
+                Alert.alert(t('common.success'), t('revenueCat.purchaseSuccess'));
+              }
+            } catch (paywallError) {
+              Alert.alert(
+                t('common.error'),
+                paywallError?.code === REVENUECAT_NATIVE_MODULE_UNAVAILABLE
+                  ? t('revenueCat.paywallUnavailable')
+                  : paywallError?.message || t('revenueCat.paywallUnavailable')
+              );
+            }
+          },
+        });
+      }
+
+      Alert.alert(
+        paymentEnabled ? t('myCard.premiumPresetLimitTitle') : t('myCard.premiumPresetLimitDisabledTitle'),
+        paymentEnabled ? t('myCard.premiumPresetLimitMessage') : t('myCard.premiumPresetLimitDisabledMessage'),
+        actions
+      );
       return;
     }
 
@@ -922,7 +955,7 @@ export default function MyCardScreen({ route }) {
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
             refreshControl={
-              <RefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
+              <AppRefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
             }
           >
             {editingSection === 'bank' ? renderBankForm() : renderECardForm()}
@@ -1034,7 +1067,7 @@ export default function MyCardScreen({ route }) {
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
           refreshControl={
-            <RefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
+            <AppRefreshControl refreshing={refreshingHome} tintColor={colors.primary} onRefresh={handleHomeRefresh} />
           }
         >
           <Text style={[styles.screenTitle, { color: colors.text }]}>{t('myCard.myCardTitle')}</Text>
