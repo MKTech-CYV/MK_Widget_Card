@@ -158,6 +158,11 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.facebook.react:react-android")
 
+    // Force a Billing Library version >= 8.0.0 — the AdMob SDK transitively
+    // pulls an older AIDL-based version that Google Play now rejects at
+    // submission ("must update to at least version 8.0.0").
+    implementation("com.android.billingclient:billing:8.0.0")
+
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
