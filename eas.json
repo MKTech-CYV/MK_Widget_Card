@@ -26,6 +26,9 @@
       "android": {
         "serviceAccountKeyPath": "./credentials/play-console-service-account.json",
         "track": "production"
+      },
+      "ios": {
+        "ascAppId": "6768935113"
       }
     }
   }
