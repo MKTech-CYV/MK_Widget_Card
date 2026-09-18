@@ -3,7 +3,7 @@
     "name": "MK Widget Card",
     "slug": "MK_Widget_Card",
     "scheme": "mkwidgetcard",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,6 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
+      "buildNumber": "10",
       "bundleIdentifier": "com.mktech.widgetcard",
       "infoPlist": {
         "NSCameraUsageDescription": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp.",
@@ -29,11 +31,20 @@
           "cameraPermission": "Cho phép MK Widget Card truy cập camera để quét mã QR danh thiếp.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-apple-authentication",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-7281955271433795~9392965747",
+          "iosAppId": "ca-app-pub-7281955271433795~7762039163"
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "android": {
       "package": "com.mktech.widgetcard",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -55,9 +66,13 @@
       }
     },
     "owner": "mktechvn",
-    "runtimeVersion": "3.0.0",
+    "runtimeVersion": "3.1.0",
     "updates": {
       "url": "https://u.expo.dev/fb9ff7c0-83bf-4f70-9970-5ef3bdff5300"
     }
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-7281955271433795~9392965747",
+    "ios_app_id": "ca-app-pub-7281955271433795~7762039163"
   }
 }

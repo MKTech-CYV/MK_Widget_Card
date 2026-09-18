@@ -1,9 +1,22 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Linking } from 'react-native';
-import * as ExpoLinking from 'expo-linking';
-import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import * as Crypto from 'expo-crypto';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithCredential,
+  reauthenticateWithCredential,
+  GoogleAuthProvider,
+  OAuthProvider,
+  signOut as firebaseSignOut,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db, isFirebaseConfigured } from '../services/firebaseClient';
 import { StorageService } from '../services/StorageService';
 import { fetchProfile } from '../services/ProfileService';
+import { syncAccountDataOnLogin } from '../services/AccountSyncService';
+import { deleteCurrentAccount } from '../services/AccountDeletionService';
+import { getAppleAuthenticationModule } from '../services/NativeAuthModules';
 import {
   bankQrPresetToLocalData,
   ecardPresetToLocalData,
@@ -11,35 +24,6 @@ import {
 } from '../services/AccountPresetService';
 
 const AuthContext = createContext(null);
-const AUTH_CALLBACK_PATH = 'auth/callback';
-
-export const authRedirectUrl = ExpoLinking.createURL(AUTH_CALLBACK_PATH);
-
-const parseParamString = (value = '') => (
-  value
-    .split('&')
-    .filter(Boolean)
-    .reduce((params, pair) => {
-      const [rawKey, ...rawValueParts] = pair.split('=');
-      const key = decodeURIComponent(rawKey || '');
-      const rawValue = rawValueParts.join('=');
-
-      if (key) {
-        params[key] = decodeURIComponent((rawValue || '').replace(/\+/g, ' '));
-      }
-
-      return params;
-    }, {})
-);
-
-const getUrlParams = (url = '') => {
-  const [, hash = ''] = url.split('#');
-  const query = url.includes('?') ? url.split('?')[1].split('#')[0] : '';
-  return {
-    ...parseParamString(query),
-    ...parseParamString(hash),
-  };
-};
 
 const compactText = (value) => `${value || ''}`.trim();
 
@@ -62,6 +46,7 @@ const ECARD_COMPARE_KEYS = [
   'bio',
   'avatar',
   'avatarUrl',
+  'logoUrl',
   'countryCode',
 ];
 const BANK_COMPARE_KEYS = ['bankName', 'bankAccount', 'bankAccountHolderName'];
@@ -122,11 +107,69 @@ const clearLocalAccountPresetSections = async ({ currentData, sections } = {}) =
   }
 };
 
+// Firebase's User object uses `.uid` and a different shape than Supabase's —
+// map it to the `.id` + Supabase-named field aliases the rest of the app
+// (AuthScreen.js, userProfile.js) still reads, instead of touching every
+// call site.
+const toAppUser = (firebaseUser) => {
+  if (!firebaseUser) return null;
+
+  return {
+    id: firebaseUser.uid,
+    uid: firebaseUser.uid,
+    email: firebaseUser.email,
+    displayName: firebaseUser.displayName,
+    photoURL: firebaseUser.photoURL,
+    providerData: firebaseUser.providerData,
+    emailVerified: firebaseUser.emailVerified,
+    email_confirmed_at: firebaseUser.emailVerified || null,
+    confirmed_at: firebaseUser.emailVerified || null,
+    created_at: firebaseUser.metadata?.creationTime || null,
+    last_sign_in_at: firebaseUser.metadata?.lastSignInTime || null,
+  };
+};
+
+// Postgres had a DB trigger that auto-created a `profiles` row on new
+// auth.users signup — Firestore has no equivalent, so create it here on
+// first sign-in. Idempotent: only writes if the doc doesn't exist yet.
+const ensureProfileDocument = async (firebaseUser) => {
+  if (!firebaseUser) return;
+
+  const profileRef = doc(db, 'profiles', firebaseUser.uid);
+  const snap = await getDoc(profileRef);
+  if (snap.exists()) return;
+
+  await setDoc(profileRef, {
+    id: firebaseUser.uid,
+    email: firebaseUser.email || '',
+    avatar_url: firebaseUser.photoURL || '',
+    ecard_preset_count: 0,
+    bank_qr_preset_count: 0,
+    created_at: serverTimestamp(),
+  });
+};
+
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [accountProfile, setAccountProfile] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const syncedUserIdsRef = useRef(new Set());
+
+  // Free/guest data is local-only. Once a user signs in, push whatever they
+  // built locally up to their account (first login only) and from then on
+  // treat the backend as the source of truth. Guarded to run once per user
+  // per app session so it doesn't refire on every token refresh.
+  const ensureAccountSynced = async (targetUser) => {
+    if (!targetUser?.id || syncedUserIdsRef.current.has(targetUser.id)) return;
+
+    syncedUserIdsRef.current.add(targetUser.id);
+    try {
+      await syncAccountDataOnLogin(targetUser.id);
+    } catch {
+      syncedUserIdsRef.current.delete(targetUser.id);
+    }
+  };
 
   const cacheAccountProfile = async (profile) => {
     const userId = profile?.id || user?.id;
@@ -139,7 +182,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshProfile = async (targetUser = user) => {
-    if (!targetUser?.id || !isSupabaseConfigured) {
+    if (!targetUser?.id || !isFirebaseConfigured) {
       setAccountProfile(null);
       return null;
     }
@@ -149,6 +192,8 @@ export const AuthProvider = ({ children }) => {
     if (cached) {
       setAccountProfile(cached);
     }
+
+    ensureAccountSynced(targetUser).catch(() => {});
 
     const remoteProfile = await fetchProfile(targetUser.id).catch(() => null);
     if (remoteProfile) {
@@ -161,7 +206,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshSession = async () => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setSession(null);
       setUser(null);
       setAccountProfile(null);
@@ -169,133 +214,188 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
 
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-
-    setSession(data.session || null);
-    setUser(data.session?.user || null);
-    await refreshProfile(data.session?.user || null);
+    const appUser = toAppUser(auth.currentUser);
+    setSession(appUser ? { user: appUser } : null);
+    setUser(appUser);
+    await refreshProfile(appUser);
     setIsAuthReady(true);
 
-    return data.session || null;
-  };
-
-  const handleAuthCallback = async (url) => {
-    if (!url || !isSupabaseConfigured) return;
-
-    const params = getUrlParams(url);
-    if (params.error || params.error_description) {
-      throw new Error(params.error_description || params.error);
-    }
-
-    if (params.code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(params.code);
-      if (error) throw error;
-      return;
-    }
-
-    if (params.access_token && params.refresh_token) {
-      const { error } = await supabase.auth.setSession({
-        access_token: params.access_token,
-        refresh_token: params.refresh_token,
-      });
-      if (error) throw error;
-    }
+    return appUser ? { user: appUser } : null;
   };
 
   useEffect(() => {
-    let isMounted = true;
+    if (!isFirebaseConfigured) {
+      setIsAuthReady(true);
+      return undefined;
+    }
 
-    const loadSession = async () => {
-      if (!isSupabaseConfigured) {
-        if (isMounted) {
-          setAccountProfile(null);
-          setIsAuthReady(true);
-        }
-        return;
+    // Restores any persisted session automatically and fires once on mount —
+    // no separate getSession()/deep-link race like the old OAuth-redirect
+    // flow needed.
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        await ensureProfileDocument(firebaseUser).catch(() => {});
       }
 
-      const { data } = await supabase.auth.getSession();
-      if (!isMounted) return;
+      const appUser = toAppUser(firebaseUser);
+      setSession(appUser ? { user: appUser } : null);
+      setUser(appUser);
 
-      setSession(data.session || null);
-      setUser(data.session?.user || null);
-      await refreshProfile(data.session?.user || null);
+      if (appUser) {
+        await refreshProfile(appUser).catch(() => {});
+      } else {
+        setAccountProfile(null);
+      }
+
       setIsAuthReady(true);
-    };
-
-    const authSubscription = isSupabaseConfigured
-      ? supabase.auth.onAuthStateChange((_event, nextSession) => {
-        setSession(nextSession || null);
-        setUser(nextSession?.user || null);
-        if (nextSession?.user) {
-          refreshProfile(nextSession.user).catch(() => {});
-        } else {
-          setAccountProfile(null);
-        }
-      }).data.subscription
-      : null;
-
-    const urlSubscription = Linking.addEventListener('url', ({ url }) => {
-      handleAuthCallback(url).catch(() => {});
     });
 
-    Linking.getInitialURL()
-      .then((url) => {
-        if (url) {
-          return handleAuthCallback(url);
-        }
-        return null;
-      })
-      .catch(() => {})
-      .finally(loadSession);
-
-    return () => {
-      isMounted = false;
-      authSubscription?.unsubscribe?.();
-      urlSubscription?.remove?.();
-    };
+    return unsubscribe;
   }, []);
 
   const signInWithPassword = async ({ email, password }) => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured.');
+    if (!isFirebaseConfigured) {
+      throw new Error('Firebase is not configured.');
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: `${email || ''}`.trim(),
-      password,
+    await signInWithEmailAndPassword(auth, `${email || ''}`.trim(), password);
+  };
+
+  // Returns null if the user backs out of the native picker (matches the old
+  // browser-flow behavior of quietly returning instead of throwing).
+  const getGoogleIdToken = async () => {
+    await GoogleSignin.hasPlayServices();
+    const response = await GoogleSignin.signIn();
+    if (response?.type === 'cancelled') return null;
+
+    const idToken = response?.data?.idToken || response?.idToken;
+    if (!idToken) {
+      throw new Error('Google did not return an ID token.');
+    }
+    return idToken;
+  };
+
+  // Firebase's Apple credential exchange requires a nonce (unlike Supabase's
+  // simpler signInWithIdToken) — generate + SHA-256 hash it, pass the hash to
+  // Apple, and the raw value to Firebase.
+  const getAppleCredential = async () => {
+    const AppleAuthentication = await getAppleAuthenticationModule();
+    if (!AppleAuthentication?.signInAsync) {
+      throw new Error('This build is missing the Sign in with Apple module. Please rebuild the development client or store build.');
+    }
+
+    const isAvailable = await AppleAuthentication.isAvailableAsync();
+    if (!isAvailable) {
+      throw new Error('Sign in with Apple is not available on this device.');
+    }
+
+    const rawNonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+
+    const appleCredential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
     });
 
-    if (error) throw error;
+    if (!appleCredential.identityToken) {
+      throw new Error('Apple identity token was not returned.');
+    }
+
+    const appleProvider = new OAuthProvider('apple.com');
+    return appleProvider.credential({
+      idToken: appleCredential.identityToken,
+      rawNonce,
+    });
   };
 
   const signInWithGoogle = async () => {
-    if (!isSupabaseConfigured) {
-      throw new Error('Supabase is not configured.');
+    if (!isFirebaseConfigured) {
+      throw new Error('Firebase is not configured.');
     }
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: authRedirectUrl,
-        skipBrowserRedirect: true,
-      },
-    });
+    const idToken = await getGoogleIdToken();
+    if (!idToken) return null;
 
-    if (error) throw error;
-    if (!data?.url) throw new Error('Google OAuth URL was not returned.');
+    await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+    return null;
+  };
 
-    await Linking.openURL(data.url);
-    return { type: 'opened' };
+  const signInWithApple = async () => {
+    if (!isFirebaseConfigured) {
+      throw new Error('Firebase is not configured.');
+    }
+
+    const credential = await getAppleCredential();
+    await signInWithCredential(auth, credential);
+  };
+
+  // Firebase requires a *recent* sign-in before it will let a user delete
+  // their own account. For Google/Apple we can silently re-run the native
+  // sign-in flow and re-authenticate without bothering the user twice; for
+  // email/password there's no silent option (would need a password prompt),
+  // so that case still surfaces a clear manual-retry message below.
+  const reauthenticateCurrentUser = async (firebaseUser) => {
+    const providerId = firebaseUser.providerData?.[0]?.providerId;
+
+    if (providerId === 'google.com') {
+      const idToken = await getGoogleIdToken();
+      if (!idToken) {
+        throw new Error('Đăng nhập lại đã bị huỷ.');
+      }
+      await reauthenticateWithCredential(firebaseUser, GoogleAuthProvider.credential(idToken));
+      return;
+    }
+
+    if (providerId === 'apple.com') {
+      const credential = await getAppleCredential();
+      await reauthenticateWithCredential(firebaseUser, credential);
+      return;
+    }
+
+    throw new Error('Vui lòng đăng xuất rồi đăng nhập lại trước khi xoá tài khoản.');
+  };
+
+  const deleteAccount = async () => {
+    if (!isFirebaseConfigured) return;
+
+    const targetUser = user;
+    const firebaseUser = auth.currentUser;
+    if (!targetUser?.id || !firebaseUser) {
+      throw new Error('No signed-in account to delete.');
+    }
+
+    const presetSectionsInUse = await getAccountPresetSectionsInUse(targetUser).catch(() => null);
+
+    try {
+      await deleteCurrentAccount();
+    } catch (error) {
+      if (error?.code !== 'auth/requires-recent-login') {
+        throw error;
+      }
+      await reauthenticateCurrentUser(firebaseUser);
+      await deleteCurrentAccount();
+    }
+
+    setSession(null);
+    setUser(null);
+    setAccountProfile(null);
+
+    StorageService.init();
+    await StorageService.clearCachedProfile(targetUser.id).catch(() => null);
+    await clearLocalAccountPresetSections({
+      currentData: presetSectionsInUse?.currentData,
+      sections: { ecard: true, bank: true },
+    }).catch(() => {});
   };
 
   const signOut = async () => {
-    if (!isSupabaseConfigured) return;
+    if (!isFirebaseConfigured) return;
 
     const presetSectionsInUse = await getAccountPresetSectionsInUse(user).catch(() => null);
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    await firebaseSignOut(auth);
     await clearLocalAccountPresetSections(presetSectionsInUse).catch(() => {});
   };
 
@@ -304,14 +404,15 @@ export const AuthProvider = ({ children }) => {
     user,
     accountProfile,
     isAuthReady,
-    isSupabaseConfigured,
-    authRedirectUrl,
+    isFirebaseConfigured,
     signInWithPassword,
     signInWithGoogle,
+    signInWithApple,
     refreshSession,
     refreshProfile,
     cacheAccountProfile,
     signOut,
+    deleteAccount,
   }), [session, user, accountProfile, isAuthReady]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

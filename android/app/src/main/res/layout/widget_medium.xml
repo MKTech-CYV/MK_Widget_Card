@@ -9,9 +9,10 @@
 
     <ImageView
         android:id="@+id/widget_qr_image"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
         android:layout_gravity="center_vertical"
+        android:layout_weight="42"
         android:background="@drawable/widget_qr_surface"
         android:contentDescription="@string/widget_qr_content_description"
         android:padding="2dp"
@@ -22,7 +23,7 @@
         android:layout_height="match_parent"
         android:layout_gravity="center_vertical"
         android:layout_marginStart="10dp"
-        android:layout_weight="1"
+        android:layout_weight="58"
         android:gravity="center_vertical"
         android:orientation="vertical">
 
@@ -51,7 +52,7 @@
             android:includeFontPadding="false"
             android:maxLines="1"
             android:textColor="#111827"
-            android:textSize="14sp"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <TextView
@@ -63,7 +64,7 @@
             android:includeFontPadding="false"
             android:maxLines="1"
             android:textColor="#667085"
-            android:textSize="11sp" />
+            android:textSize="12sp" />
 
         <TextView
             android:id="@+id/widget_extra"
@@ -75,7 +76,20 @@
             android:includeFontPadding="false"
             android:maxLines="1"
             android:textColor="#007AFF"
-            android:textSize="13sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_phone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="#667085"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

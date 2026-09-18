@@ -1,10 +1,5 @@
 const cleanText = (value) => `${value || ''}`.trim();
 
-const getIdentityData = (user) => {
-  const identity = Array.isArray(user?.identities) ? user.identities[0] : null;
-  return identity?.identity_data || {};
-};
-
 const makeInitials = (name, email) => {
   const source = cleanText(name) || cleanText(email).split('@')[0] || 'MK';
   const parts = source
@@ -18,34 +13,27 @@ const makeInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const PROVIDER_LABELS = {
+  'google.com': 'google',
+  'apple.com': 'apple',
+  password: 'email',
+};
+
 export const getUserProfile = (user, accountProfile = null) => {
-  const metadata = user?.user_metadata || {};
-  const identityData = getIdentityData(user);
-  const email = cleanText(user?.email || metadata.email || identityData.email);
-  const displayName = cleanText(
-    metadata.full_name ||
-    metadata.name ||
-    metadata.display_name ||
-    identityData.full_name ||
-    identityData.name ||
-    identityData.display_name
-  ) || cleanText(email.split('@')[0]) || 'MK eCard';
+  const email = cleanText(user?.email);
+  const displayName = cleanText(user?.displayName) || cleanText(email.split('@')[0]) || 'MK eCard';
   const avatarUrl = cleanText(
     accountProfile?.avatar_url ||
     accountProfile?.avatarUrl ||
-    metadata.avatar_url ||
-    metadata.picture ||
-    identityData.avatar_url ||
-    identityData.picture
+    user?.photoURL
   );
-  const provider = cleanText(user?.app_metadata?.provider || user?.identities?.[0]?.provider || 'email');
+  const providerId = user?.providerData?.[0]?.providerId || 'password';
+  const provider = PROVIDER_LABELS[providerId] || 'email';
 
   return {
     displayName,
     email,
     avatarUrl,
-    isPremium: Boolean(accountProfile?.is_premium),
-    premiumExpiredAt: accountProfile?.premium_expired_at || null,
     initials: makeInitials(displayName, email),
     provider,
     shortId: user?.id ? `${user.id.slice(0, 8)}...${user.id.slice(-6)}` : '',

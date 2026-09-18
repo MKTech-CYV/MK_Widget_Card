@@ -3,6 +3,8 @@ import DefaultPreference from 'react-native-default-preference';
 
 const APP_GROUP = 'group.com.mk.ecard';
 const { WidgetUpdater } = NativeModules;
+const BANK_QR_IMAGE_CACHE_KEYS = 'bankQrImageKeys';
+const BANK_QR_IMAGE_CACHE_LIMIT = 15;
 const ACCOUNT_PRESET_SOURCE_KEY = 'accountPresetSource';
 const ECARD_PRESET_SOURCE_KEY = 'ecardPresetId';
 const BANK_PRESET_SOURCE_KEY = 'bankPresetId';
@@ -25,6 +27,7 @@ const ECARD_DATA_KEYS = [
   'bio',
   'avatar',
   'avatarUrl',
+  'logoUrl',
   'countryCode',
 ];
 const BANK_DATA_KEYS = ['bankName', 'bankAccount', 'bankAccountHolderName'];
@@ -73,7 +76,7 @@ export const StorageService = {
     const dataString = JSON.stringify(data);
     await DefaultPreference.set('userData', dataString);
     
-    // Đồng bộ Widget ngay lập tức trên cả iOS và Android.
+    // Đồng bộ Widget ngay lập tức sau khi dữ liệu thay đổi.
     try {
       WidgetUpdater?.reloadAll?.();
     } catch {
@@ -171,6 +174,11 @@ export const StorageService = {
     return data ? JSON.parse(data) : null;
   },
 
+  clearCachedProfile: async (userId) => {
+    if (!userId) return;
+    await DefaultPreference.clear(`profile:${userId}`);
+  },
+
   setCachedRemoteSettings: async (settings) => {
     await DefaultPreference.set('remoteSettings', JSON.stringify(settings || {}));
   },
@@ -216,5 +224,54 @@ export const StorageService = {
 
   clearNotifications: async () => {
     await StorageService.setNotifications([]);
+  },
+
+  setCachedBankList: async (banks) => {
+    await DefaultPreference.set('vietqrBankList', JSON.stringify({ banks: banks || [], cachedAt: Date.now() }));
+  },
+
+  getCachedBankList: async () => {
+    const data = await DefaultPreference.get('vietqrBankList');
+    return data ? JSON.parse(data) : null;
+  },
+
+  // A small base64 snapshot of the last VietQR payment QR that loaded
+  // successfully, keyed by bank+account+holder so it stays correct if any
+  // of those change. Used so the QR still renders while offline/slow.
+  // Capped + indexed so switching/deleting bank presets over time doesn't
+  // leave an ever-growing pile of orphaned images in shared App Group
+  // storage (every distinct bank+account+holder combo ever typed used to
+  // leave a permanent entry with no eviction).
+  setCachedBankQrImage: async (key, dataUri) => {
+    if (!key || !dataUri) return;
+
+    const raw = await DefaultPreference.get(BANK_QR_IMAGE_CACHE_KEYS);
+    const keys = raw ? JSON.parse(raw) : [];
+    const nextKeys = [key, ...keys.filter((existing) => existing !== key)];
+
+    const evicted = nextKeys.slice(BANK_QR_IMAGE_CACHE_LIMIT);
+    const kept = nextKeys.slice(0, BANK_QR_IMAGE_CACHE_LIMIT);
+
+    if (evicted.length) {
+      await DefaultPreference.clearMultiple(evicted.map((evictedKey) => `bankQrImage:${evictedKey}`)).catch(() => null);
+    }
+    await DefaultPreference.set(BANK_QR_IMAGE_CACHE_KEYS, JSON.stringify(kept));
+    await DefaultPreference.set(`bankQrImage:${key}`, dataUri);
+  },
+
+  getCachedBankQrImage: async (key) => {
+    if (!key) return null;
+    return DefaultPreference.get(`bankQrImage:${key}`);
+  },
+
+  removeCachedBankQrImage: async (key) => {
+    if (!key) return;
+
+    const raw = await DefaultPreference.get(BANK_QR_IMAGE_CACHE_KEYS);
+    const keys = raw ? JSON.parse(raw) : [];
+    const nextKeys = keys.filter((existing) => existing !== key);
+
+    await DefaultPreference.set(BANK_QR_IMAGE_CACHE_KEYS, JSON.stringify(nextKeys));
+    await DefaultPreference.clear(`bankQrImage:${key}`).catch(() => null);
   },
 };

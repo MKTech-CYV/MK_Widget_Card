@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import {
   DEFAULT_REMOTE_SETTINGS,
@@ -11,41 +11,50 @@ const RemoteSettingsContext = createContext(null);
 export const RemoteSettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState(DEFAULT_REMOTE_SETTINGS);
   const [isReady, setIsReady] = useState(false);
+  const settingsRef = useRef(DEFAULT_REMOTE_SETTINGS);
+
+  const applySettings = useCallback((nextSettings) => {
+    const normalizedSettings = {
+      ...DEFAULT_REMOTE_SETTINGS,
+      ...(nextSettings || {}),
+    };
+
+    settingsRef.current = normalizedSettings;
+    setSettings(normalizedSettings);
+    return normalizedSettings;
+  }, []);
 
   const refreshRemoteSettings = useCallback(async () => {
     try {
       const remoteSettings = await fetchRemoteAppSettings();
-      const nextSettings = remoteSettings || DEFAULT_REMOTE_SETTINGS;
-      setSettings(nextSettings);
+      const nextSettings = applySettings(remoteSettings || DEFAULT_REMOTE_SETTINGS);
       setIsReady(true);
       return nextSettings;
     } catch {
-      setSettings(DEFAULT_REMOTE_SETTINGS);
+      const cached = await getCachedRemoteSettings().catch(() => null);
+      const fallbackSettings = applySettings(cached || settingsRef.current || DEFAULT_REMOTE_SETTINGS);
       setIsReady(true);
-      return DEFAULT_REMOTE_SETTINGS;
+      return fallbackSettings;
     }
-  }, []);
+  }, [applySettings]);
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
-      const cached = await getCachedRemoteSettings();
-      if (mounted && cached?.paymentEnabled === false) {
-        setSettings({
-          ...DEFAULT_REMOTE_SETTINGS,
-          ...cached,
-        });
+      const cached = await getCachedRemoteSettings().catch(() => null);
+      if (mounted && cached) {
+        applySettings(cached);
       }
 
       try {
         const remoteSettings = await fetchRemoteAppSettings();
         if (mounted) {
-          setSettings(remoteSettings || DEFAULT_REMOTE_SETTINGS);
+          applySettings(remoteSettings || DEFAULT_REMOTE_SETTINGS);
         }
       } catch {
         if (mounted) {
-          setSettings(DEFAULT_REMOTE_SETTINGS);
+          applySettings(cached || settingsRef.current || DEFAULT_REMOTE_SETTINGS);
         }
       } finally {
         if (mounted) {
@@ -66,7 +75,7 @@ export const RemoteSettingsProvider = ({ children }) => {
       mounted = false;
       appStateSubscription?.remove?.();
     };
-  }, [refreshRemoteSettings]);
+  }, [applySettings, refreshRemoteSettings]);
 
   const value = useMemo(() => ({
     ...settings,

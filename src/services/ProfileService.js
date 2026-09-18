@@ -1,30 +1,23 @@
-import { isSupabaseConfigured, supabase } from './supabaseClient';
-import { deleteStorageFile, parseStoragePathFromPublicUrl } from './SupabaseStorageService';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from './firebaseClient';
+import { deleteStorageFile, parseStoragePathFromPublicUrl } from './FirebaseStorageService';
 
 export const fetchProfile = async (userId) => {
-  if (!isSupabaseConfigured || !userId) return null;
+  if (!isFirebaseConfigured || !userId) return null;
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+  const snap = await getDoc(doc(db, 'profiles', userId));
+  if (!snap.exists()) return null;
 
-  if (error) throw error;
-  return data || null;
+  return { id: snap.id, ...snap.data() };
 };
 
 export const updateProfileAvatar = async (userId, avatarUrl) => {
-  if (!isSupabaseConfigured || !userId) return null;
+  if (!isFirebaseConfigured || !userId) return null;
 
   const previousProfile = await fetchProfile(userId).catch(() => null);
-  const { data, error } = await supabase
-    .from('profiles')
-    .upsert({ id: userId, avatar_url: avatarUrl }, { onConflict: 'id' })
-    .select('*')
-    .single();
 
-  if (error) throw error;
+  await setDoc(doc(db, 'profiles', userId), { avatar_url: avatarUrl }, { merge: true });
+  const data = await fetchProfile(userId);
 
   const previousPath = parseStoragePathFromPublicUrl(previousProfile?.avatar_url, 'avatars');
   const nextPath = parseStoragePathFromPublicUrl(avatarUrl, 'avatars');
@@ -33,18 +26,4 @@ export const updateProfileAvatar = async (userId, avatarUrl) => {
   }
 
   return data;
-};
-
-export const updateProfilePremium = async (userId, isPremium = true) => {
-  if (!isSupabaseConfigured || !userId) return null;
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ is_premium: isPremium })
-    .eq('id', userId)
-    .select('*')
-    .maybeSingle();
-
-  if (error) throw error;
-  return data || null;
 };

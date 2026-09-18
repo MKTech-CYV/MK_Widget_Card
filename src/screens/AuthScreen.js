@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,20 +12,18 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Crown, Globe2, LogIn, LogOut, Mail, ShieldCheck } from 'lucide-react-native';
+import { Camera, Globe2, LogIn, LogOut, Mail, ShieldAlert, ShieldCheck } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileAvatar from '../components/ProfileAvatar';
 import AppRefreshControl from '../components/AppRefreshControl';
 import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
-import { useRemoteSettings } from '../context/RemoteSettingsContext';
-import { useRevenueCat } from '../context/RevenueCatContext';
 import { getTranslation } from '../constants/i18n';
 import { getUserProfile } from '../utils/userProfile';
-import { deleteStorageFile, uploadImageToBucket } from '../services/SupabaseStorageService';
+import { deleteStorageFile, uploadImageToBucket } from '../services/FirebaseStorageService';
 import { updateProfileAvatar } from '../services/ProfileService';
-import { REVENUECAT_NATIVE_MODULE_UNAVAILABLE } from '../services/RevenueCatService';
+import { getAppleAuthenticationModule, hasExpoViewManager } from '../services/NativeAuthModules';
 
 const formatAccountDate = (value) => {
   if (!value) return '';
@@ -35,7 +33,7 @@ const formatAccountDate = (value) => {
 };
 
 export default function AuthScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const t = (key) => getTranslation(language, key);
@@ -43,39 +41,70 @@ export default function AuthScreen() {
     user,
     accountProfile,
     isAuthReady,
-    isSupabaseConfigured,
+    isFirebaseConfigured,
     signInWithPassword,
     signInWithGoogle,
+    signInWithApple,
     refreshSession,
     cacheAccountProfile,
     signOut,
+    deleteAccount,
   } = useAuth();
-  const { paymentEnabled, refreshRemoteSettings } = useRemoteSettings();
-  const { isPremium, openCustomerCenter, openPaywall, refreshCustomerInfo } = useRevenueCat();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loadingAction, setLoadingAction] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const profile = getUserProfile(user, {
-    ...(accountProfile || {}),
-    is_premium: Boolean(accountProfile?.is_premium || isPremium),
-  });
+  const [appleAuthentication, setAppleAuthentication] = useState(null);
+  const profile = getUserProfile(user, accountProfile);
   const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
   const createdAt = formatAccountDate(user?.created_at);
   const lastSignInAt = formatAccountDate(user?.last_sign_in_at);
-  const premiumExpiredAt = formatAccountDate(profile.premiumExpiredAt);
+  const providerLabel = profile.provider === 'google'
+    ? 'Google'
+    : profile.provider === 'apple'
+      ? 'Apple'
+      : 'Email';
+  const AppleAuthenticationButton = appleAuthentication?.AppleAuthenticationButton;
+  const appleButtonType = appleAuthentication?.AppleAuthenticationButtonType?.SIGN_IN;
+  const appleButtonStyle = isDark
+    ? appleAuthentication?.AppleAuthenticationButtonStyle?.WHITE
+    : appleAuthentication?.AppleAuthenticationButtonStyle?.BLACK;
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (Platform.OS === 'ios') {
+      getAppleAuthenticationModule()
+        .then(async (module) => {
+          const isAvailable = await module?.isAvailableAsync?.().catch(() => false);
+          const canRenderNativeButton = Boolean(
+            module?.AppleAuthenticationButton &&
+            isAvailable &&
+            hasExpoViewManager('ExpoAppleAuthentication')
+          );
+
+          if (mounted) setAppleAuthentication(canRenderNativeButton ? module : null);
+        })
+        .catch(() => {
+          if (mounted) setAppleAuthentication(null);
+        });
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const runAuthAction = async (action, fn) => {
     setLoadingAction(action);
     try {
       await fn();
     } catch (error) {
-      Alert.alert(
-        t('common.error'),
-        error?.code === REVENUECAT_NATIVE_MODULE_UNAVAILABLE
-          ? t('revenueCat.paywallUnavailable')
-          : error?.message || t('auth.genericError')
-      );
+      if (error?.code === 'ERR_REQUEST_CANCELED' || error?.message === 'ERR_REQUEST_CANCELED') {
+        return;
+      }
+
+      Alert.alert(t('common.error'), error?.message || t('auth.genericError'));
     } finally {
       setLoadingAction(null);
     }
@@ -93,29 +122,13 @@ export default function AuthScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
-        refreshSession?.(),
-        refreshRemoteSettings?.(),
-        refreshCustomerInfo?.(),
-      ]);
+      await refreshSession?.();
     } catch {
       // Keep the current account view if refreshing the session fails.
     } finally {
       setRefreshing(false);
     }
   };
-
-  const handlePremiumPress = () => runAuthAction('premium', async () => {
-    if (isPremium) {
-      await openCustomerCenter();
-      return;
-    }
-
-    const result = await openPaywall({ onlyIfNeeded: true });
-    if (result?.entitlementActive) {
-      Alert.alert(t('common.success'), t('revenueCat.purchaseSuccess'));
-    }
-  });
 
   const handleAvatarUpload = () => runAuthAction('avatar', async () => {
     if (!user?.id) return;
@@ -144,6 +157,8 @@ export default function AuthScreen() {
         asset: result.assets[0],
         prefix: 'avatar',
       });
+      // Account avatar is independent from any eCard preset's own photo —
+      // each preset keeps its own avatar_url, unaffected by this.
       const nextProfile = await updateProfileAvatar(user.id, upload.publicUrl);
       await cacheAccountProfile(nextProfile);
     } catch (error) {
@@ -153,6 +168,24 @@ export default function AuthScreen() {
       throw error;
     }
   });
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      t('auth.deleteAccountTitle'),
+      t('auth.deleteAccountMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('auth.deleteAccountConfirm'),
+          style: 'destructive',
+          onPress: () => runAuthAction('deleteAccount', async () => {
+            await deleteAccount();
+            Alert.alert(t('common.success'), t('auth.deleteAccountSuccess'));
+          }),
+        },
+      ]
+    );
+  };
 
   if (!isAuthReady) {
     return (
@@ -211,7 +244,7 @@ export default function AuthScreen() {
             </View>
             <View style={[styles.profilePill, { backgroundColor: `${colors.primary}14` }]}>
               <Text style={[styles.profilePillText, { color: colors.primary }]}>
-                {profile.provider === 'google' ? 'Google' : 'Email'}
+                {providerLabel}
               </Text>
             </View>
             <View style={[styles.profilePill, { backgroundColor: `${isEmailVerified ? colors.success : colors.textSecondary}14` }]}>
@@ -250,43 +283,8 @@ export default function AuthScreen() {
                 </Text>
               </View>
             )}
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                {t('auth.premiumStatus')}
-              </Text>
-              <Text style={[styles.detailValue, { color: profile.isPremium ? colors.success : colors.text }]} numberOfLines={1}>
-                {profile.isPremium ? t('auth.premiumActive') : t('auth.premiumInactive')}
-              </Text>
-            </View>
-            {!!premiumExpiredAt && (
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
-                  {t('auth.premiumExpiredAt')}
-                </Text>
-                <Text style={[styles.detailValue, { color: colors.text }]} numberOfLines={1}>
-                  {premiumExpiredAt}
-                </Text>
-              </View>
-            )}
           </View>
         </View>
-
-        {paymentEnabled && (
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: isPremium ? colors.success : colors.primary }]}
-            onPress={handlePremiumPress}
-            disabled={Boolean(loadingAction)}
-          >
-            {loadingAction === 'premium' ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Crown color="#fff" size={18} />
-            )}
-            <Text style={styles.primaryButtonText}>
-              {isPremium ? t('revenueCat.manageTitle') : t('revenueCat.upgradeTitle')}
-            </Text>
-          </TouchableOpacity>
-        )}
 
         <TouchableOpacity
           style={[styles.dangerButton, { backgroundColor: `${colors.error}14` }]}
@@ -299,6 +297,19 @@ export default function AuthScreen() {
             <LogOut color={colors.error} size={18} />
           )}
           <Text style={[styles.dangerButtonText, { color: colors.error }]}>{t('auth.signOut')}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.deleteButton, { borderColor: `${colors.error}55` }]}
+          onPress={handleDeleteAccount}
+          disabled={Boolean(loadingAction)}
+        >
+          {loadingAction === 'deleteAccount' ? (
+            <ActivityIndicator color={colors.error} />
+          ) : (
+            <ShieldAlert color={colors.error} size={18} />
+          )}
+          <Text style={[styles.dangerButtonText, { color: colors.error }]}>{t('auth.deleteAccount')}</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -325,7 +336,7 @@ export default function AuthScreen() {
           <Text style={[styles.authTitle, { color: colors.text }]}>{t('auth.signIn')}</Text>
           <Text style={[styles.authDesc, { color: colors.textSecondary }]}>{t('auth.signInOnlyDesc')}</Text>
 
-          {!isSupabaseConfigured && (
+          {!isFirebaseConfigured && (
             <Text style={[styles.configWarning, { color: colors.error }]}>
               {t('auth.missingConfig')}
             </Text>
@@ -366,9 +377,9 @@ export default function AuthScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.primary }, !isSupabaseConfigured && styles.disabledButton]}
+            style={[styles.primaryButton, { backgroundColor: colors.primary }, !isFirebaseConfigured && styles.disabledButton]}
             onPress={handleEmailSubmit}
-            disabled={!isSupabaseConfigured || Boolean(loadingAction)}
+            disabled={!isFirebaseConfigured || Boolean(loadingAction)}
           >
             {loadingAction === 'signin' ? (
               <ActivityIndicator color="#fff" />
@@ -380,10 +391,38 @@ export default function AuthScreen() {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
+          {Platform.OS === 'ios' && (
+            <View style={styles.appleButtonWrap}>
+              {loadingAction === 'apple' ? (
+                <View style={[styles.appleLoadingButton, { backgroundColor: colors.text }]}>
+                  <ActivityIndicator color={colors.background} />
+                </View>
+              ) : AppleAuthenticationButton ? (
+                <AppleAuthenticationButton
+                  buttonType={appleButtonType}
+                  buttonStyle={appleButtonStyle}
+                  cornerRadius={16}
+                  style={styles.appleButton}
+                  onPress={() => runAuthAction('apple', signInWithApple)}
+                />
+              ) : (
+                <TouchableOpacity
+                  style={[styles.appleFallbackButton, { backgroundColor: colors.text }, !isFirebaseConfigured && styles.disabledButton]}
+                  onPress={() => runAuthAction('apple', signInWithApple)}
+                  disabled={!isFirebaseConfigured || Boolean(loadingAction)}
+                >
+                  <Text style={[styles.appleFallbackButtonText, { color: colors.background }]}>
+                    {t('auth.continueWithApple')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           <TouchableOpacity
-            style={[styles.googleButton, { borderColor: colors.border }, !isSupabaseConfigured && styles.disabledButton]}
+            style={[styles.googleButton, { borderColor: colors.border }, !isFirebaseConfigured && styles.disabledButton]}
             onPress={() => runAuthAction('google', signInWithGoogle)}
-            disabled={!isSupabaseConfigured || Boolean(loadingAction)}
+            disabled={!isFirebaseConfigured || Boolean(loadingAction)}
           >
             {loadingAction === 'google' ? (
               <ActivityIndicator color={colors.primary} />
@@ -428,6 +467,11 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800', marginLeft: 8 },
   disabledButton: { opacity: 0.58 },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: Spacing.lg },
+  appleButtonWrap: { marginBottom: 12 },
+  appleButton: { height: 54 },
+  appleLoadingButton: { height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  appleFallbackButton: { height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  appleFallbackButtonText: { fontSize: 16, fontWeight: '800' },
   googleButton: { height: 54, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   googleButtonText: { fontSize: 16, fontWeight: '800', marginLeft: 8 },
   redirectHint: { marginTop: Spacing.md, fontSize: 12, lineHeight: 17 },
@@ -441,5 +485,6 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 13, fontWeight: '800' },
   detailValue: { flex: 1, textAlign: 'right', fontSize: 14, fontWeight: '800', marginLeft: Spacing.md },
   dangerButton: { height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginTop: Spacing.lg },
+  deleteButton: { height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginTop: Spacing.md, borderWidth: 1 },
   dangerButtonText: { fontSize: 16, fontWeight: '800', marginLeft: 8 },
 });

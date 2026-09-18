@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -7,25 +7,29 @@ import { ThemeProvider } from './src/constants/Theme';
 import { AppPreferencesProvider } from './src/context/AppPreferencesContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { RemoteSettingsProvider } from './src/context/RemoteSettingsContext';
-import { RevenueCatProvider } from './src/context/RevenueCatContext';
+import { AdMobService } from './src/services/AdMobService';
 
 /**
  * MK eCard - Production Version 2026
  * Architecture: Modular Screen-based with Native Stack
  */
 export default function App() {
+  useEffect(() => {
+    AdMobService.initialize();
+    return () => {
+      AdMobService.destroy();
+    };
+  }, []);
   return (
     <SafeAreaProvider>
       <AppPreferencesProvider>
         <ThemeProvider>
           <AuthProvider>
             <RemoteSettingsProvider>
-              <RevenueCatProvider>
-                <NavigationContainer>
-                  <AppNavigator />
-                  <StatusBar style="auto" />
-                </NavigationContainer>
-              </RevenueCatProvider>
+              <NavigationContainer>
+                <AppNavigator />
+                <StatusBar style="auto" />
+              </NavigationContainer>
             </RemoteSettingsProvider>
           </AuthProvider>
         </ThemeProvider>

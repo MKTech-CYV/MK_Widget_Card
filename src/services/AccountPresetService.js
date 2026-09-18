@@ -1,90 +1,44 @@
-import { isSupabaseConfigured, supabase, supabaseAnonKey, supabaseKey, supabasePublishableKey, supabaseUrl } from './supabaseClient';
-import { deleteStorageFileFromUrl, deleteStorageFileFromUrlIfChanged } from './SupabaseStorageService';
-import { getFriendlyErrorMessage } from '../utils/errorParser';
+import {
+  collection, doc, getDoc, getDocs, updateDoc, deleteDoc,
+  query, where, orderBy, serverTimestamp, writeBatch, runTransaction,
+} from 'firebase/firestore';
+import { db, auth, isFirebaseConfigured } from './firebaseClient';
+import { deleteStorageFileFromUrl, deleteStorageFileFromUrlIfChanged } from './FirebaseStorageService';
 
-const requireAuthSession = async () => {
-  if (!isSupabaseConfigured) {
-    throw new Error('Supabase is not configured.');
+const requireUid = () => {
+  if (!isFirebaseConfigured) {
+    throw new Error('Firebase is not configured.');
   }
 
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (!data?.session?.access_token || !data.session.user?.id) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
     throw new Error('Please sign in before using account presets.');
   }
 
-  return data.session;
+  return uid;
 };
-
-const restRequest = async (path, { method = 'GET', body, prefer } = {}) => {
-  const session = await requireAuthSession();
-  const restKey = supabasePublishableKey || supabaseAnonKey || supabaseKey;
-  const baseUrl = supabaseUrl.replace(/\/$/, '');
-
-  let response;
-  try {
-    response = await fetch(`${baseUrl}/rest/v1${path}`, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        apikey: restKey,
-        Authorization: `Bearer ${session.access_token}`,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-        ...(prefer ? { Prefer: prefer } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-  } catch (error) {
-    const friendly = getFriendlyErrorMessage(error);
-    const requestError = new Error(friendly || 'Không có kết nối mạng. Vui lòng kiểm tra kết nối Internet.');
-    requestError.method = method;
-    requestError.path = path;
-    throw requestError;
-  }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    let payload = null;
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      payload = null;
-    }
-
-    const error = new Error(payload?.message || text || `Supabase request failed (${response.status})`);
-    error.status = response.status;
-    error.code = payload?.code;
-    error.details = payload?.details;
-    error.hint = payload?.hint;
-    error.method = method;
-    error.path = path;
-    error.payload = payload;
-    throw error;
-  }
-
-  if (response.status === 204) return null;
-
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
-};
-
-const firstRow = (value) => (Array.isArray(value) ? value[0] : value);
 
 const compactText = (value) => `${value || ''}`.trim();
 
-export const isPresetLimitPolicyError = (error) => {
-  const details = [
-    error?.code,
-    error?.message,
-    error?.path,
-    error?.payload ? JSON.stringify(error.payload) : '',
-  ].filter(Boolean).join(' ');
+// Matches the real cap from the old Postgres RLS policy (pg_policies:
+// "Users can insert own ecards"/"...bank qrs", `count(*) < 10`). Enforced
+// here via a Firestore transaction against a counter on `profiles` (count(*)
+// isn't cheap/atomic in Security Rules the way Postgres RLS made it). A
+// `getAfter()` Security Rules layer for defense-in-depth was designed but
+// deliberately not shipped — that needs the Firestore emulator + rules unit
+// tests to verify it doesn't false-block legitimate writes, which is out of
+// scope for now. A user bypassing their *own* quota client-side is low
+// severity (self-inconvenience, not cross-user exposure).
+const ECARD_PRESET_LIMIT = 10;
+const BANK_QR_PRESET_LIMIT = 10;
 
-  return (
-    details.includes('42501') &&
-    /row-level security|violates|user_ecards|user_bank_qrs|user_bank_grs/i.test(details)
-  );
+const presetLimitError = (message) => {
+  const error = new Error(message);
+  error.code = 'preset-limit-reached';
+  return error;
 };
+
+export const isPresetLimitPolicyError = (error) => error?.code === 'preset-limit-reached';
 
 const buildECardLabel = (data = {}) => (
   compactText(data.fullName) || compactText(data.email) || 'eCard'
@@ -105,6 +59,8 @@ const getECardAvatarUrl = (preset = {}) => (
   compactText(preset.avatar_url || preset.social?.avatarUrl || preset.social?.avatar || '')
 );
 
+const getECardLogoUrl = (preset = {}) => compactText(preset.logo_url || '');
+
 const deleteECardAvatarFromStorage = async (avatarUrl) => {
   await deleteStorageFileFromUrl(avatarUrl, 'ecards').catch(() => null);
 };
@@ -115,6 +71,12 @@ const cleanupReplacedECardAvatar = async (previousPreset, nextPreset) => {
   await deleteStorageFileFromUrlIfChanged({
     previousUrl,
     nextUrl,
+    bucket: 'ecards',
+  }).catch(() => null);
+
+  await deleteStorageFileFromUrlIfChanged({
+    previousUrl: getECardLogoUrl(previousPreset),
+    nextUrl: getECardLogoUrl(nextPreset),
     bucket: 'ecards',
   }).catch(() => null);
 };
@@ -132,6 +94,7 @@ export const ecardToPresetPayload = ({ userId, data, label }) => ({
   website: compactText(data.website),
   address: compactText(data.address),
   avatar_url: compactText(data.avatarUrl) || compactText(data.avatar),
+  logo_url: compactText(data.logoUrl),
   social: {
     linkedin: compactText(data.linkedin),
     facebook: compactText(data.facebook),
@@ -145,7 +108,7 @@ export const ecardToPresetPayload = ({ userId, data, label }) => ({
     avatar: compactText(data.avatar),
     avatarUrl: compactText(data.avatarUrl),
   },
-  last_used_at: new Date().toISOString(),
+  last_used_at: serverTimestamp(),
 });
 
 export const bankQrToPresetPayload = ({ userId, data, bankDisplayName, label }) => {
@@ -164,7 +127,7 @@ export const bankQrToPresetPayload = ({ userId, data, bankDisplayName, label }) 
       bankAccountHolderName: holderName,
     },
     qr_url: buildBankQrUrl(data, holderName),
-    last_used_at: new Date().toISOString(),
+    last_used_at: serverTimestamp(),
   };
 };
 
@@ -192,6 +155,7 @@ export const ecardPresetToLocalData = (preset = {}) => {
     countryCode: preset.phone_country_code || social.countryCode || social.country_code || '84',
     avatar,
     avatarUrl: social.avatarUrl || preset.avatar_url || '',
+    logoUrl: preset.logo_url || '',
   };
 };
 
@@ -201,130 +165,197 @@ export const bankQrPresetToLocalData = (preset = {}) => ({
   bankAccountHolderName: preset.account_holder_name || '',
 });
 
+const fetchECardPresetById = async (presetId) => {
+  const snap = await getDoc(doc(db, 'user_ecards', presetId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
+const fetchBankQrPresetById = async (presetId) => {
+  const snap = await getDoc(doc(db, 'user_bank_qrs', presetId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
 export const fetchProfileWithSelectedPresets = async (userId) => {
-  const data = await restRequest(
-    `/profiles?select=*,selected_ecard:user_ecards(*),selected_bank_qr:user_bank_qrs(*)&id=eq.${encodeURIComponent(userId)}`
-  );
-  return firstRow(data) || null;
+  const profileSnap = await getDoc(doc(db, 'profiles', userId));
+  if (!profileSnap.exists()) return null;
+
+  const profile = { id: profileSnap.id, ...profileSnap.data() };
+
+  const [selectedEcard, selectedBankQr] = await Promise.all([
+    profile.selected_ecard_id ? fetchECardPresetById(profile.selected_ecard_id) : Promise.resolve(null),
+    profile.selected_bank_qr_id ? fetchBankQrPresetById(profile.selected_bank_qr_id) : Promise.resolve(null),
+  ]);
+
+  return {
+    ...profile,
+    selected_ecard: selectedEcard,
+    selected_bank_qr: selectedBankQr,
+  };
 };
 
 export const fetchECardPresets = async () => {
-  const data = await restRequest('/user_ecards?select=*&order=created_at.desc');
-  return Array.isArray(data) ? data : [];
+  const uid = requireUid();
+  const presetsQuery = query(
+    collection(db, 'user_ecards'),
+    where('user_id', '==', uid),
+    orderBy('created_at', 'desc')
+  );
+  const snap = await getDocs(presetsQuery);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
 export const fetchBankQrPresets = async () => {
-  const data = await restRequest('/user_bank_qrs?select=*&order=created_at.desc');
-  return Array.isArray(data) ? data : [];
+  const uid = requireUid();
+  const presetsQuery = query(
+    collection(db, 'user_bank_qrs'),
+    where('user_id', '==', uid),
+    orderBy('created_at', 'desc')
+  );
+  const snap = await getDocs(presetsQuery);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
 export const saveECardPreset = async ({ userId, data, label }) => {
-  const created = await restRequest('/user_ecards', {
-    method: 'POST',
-    body: ecardToPresetPayload({ userId, data, label }),
-    prefer: 'return=representation',
+  const payload = ecardToPresetPayload({ userId, data, label });
+  const newDocRef = doc(collection(db, 'user_ecards'));
+  const profileRef = doc(db, 'profiles', userId);
+
+  await runTransaction(db, async (transaction) => {
+    const profileSnap = await transaction.get(profileRef);
+    const currentCount = profileSnap.exists() ? (profileSnap.data().ecard_preset_count || 0) : 0;
+
+    if (currentCount >= ECARD_PRESET_LIMIT) {
+      throw presetLimitError('eCard preset limit reached.');
+    }
+
+    transaction.set(newDocRef, {
+      ...payload,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    });
+    transaction.set(profileRef, { ecard_preset_count: currentCount + 1 }, { merge: true });
   });
-  const preset = firstRow(created);
 
-  if (preset?.id) {
-    await setSelectedECardPreset(userId, preset.id);
-  }
-
-  return preset;
+  await setSelectedECardPreset(userId, newDocRef.id);
+  return fetchECardPresetById(newDocRef.id);
 };
 
 export const saveBankQrPreset = async ({ userId, data, bankDisplayName, label }) => {
-  const created = await restRequest('/user_bank_qrs', {
-    method: 'POST',
-    body: bankQrToPresetPayload({ userId, data, bankDisplayName, label }),
-    prefer: 'return=representation',
+  const payload = bankQrToPresetPayload({ userId, data, bankDisplayName, label });
+  const newDocRef = doc(collection(db, 'user_bank_qrs'));
+  const profileRef = doc(db, 'profiles', userId);
+
+  await runTransaction(db, async (transaction) => {
+    const profileSnap = await transaction.get(profileRef);
+    const currentCount = profileSnap.exists() ? (profileSnap.data().bank_qr_preset_count || 0) : 0;
+
+    if (currentCount >= BANK_QR_PRESET_LIMIT) {
+      throw presetLimitError('Bank QR preset limit reached.');
+    }
+
+    transaction.set(newDocRef, {
+      ...payload,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    });
+    transaction.set(profileRef, { bank_qr_preset_count: currentCount + 1 }, { merge: true });
   });
-  const preset = firstRow(created);
 
-  if (preset?.id) {
-    await setSelectedBankQrPreset(userId, preset.id);
-  }
-
-  return preset;
+  await setSelectedBankQrPreset(userId, newDocRef.id);
+  return fetchBankQrPresetById(newDocRef.id);
 };
 
 export const updateECardPreset = async (presetId, payload, previousPreset) => {
   const previous = previousPreset === undefined
     ? await fetchECardPresetById(presetId).catch(() => null)
     : previousPreset;
-  const updated = await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'PATCH',
-    body: {
-      ...payload,
-      updated_at: new Date().toISOString(),
-    },
-    prefer: 'return=representation',
+
+  await updateDoc(doc(db, 'user_ecards', presetId), {
+    ...payload,
+    updated_at: serverTimestamp(),
   });
 
-  const nextPreset = firstRow(updated);
+  const nextPreset = await fetchECardPresetById(presetId);
   await cleanupReplacedECardAvatar(previous, nextPreset || payload);
 
   return nextPreset;
 };
 
 export const updateBankQrPreset = async (presetId, payload) => {
-  const updated = await restRequest(`/user_bank_qrs?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'PATCH',
-    body: {
-      ...payload,
-      updated_at: new Date().toISOString(),
-    },
-    prefer: 'return=representation',
+  await updateDoc(doc(db, 'user_bank_qrs', presetId), {
+    ...payload,
+    updated_at: serverTimestamp(),
   });
 
-  return firstRow(updated);
+  return fetchBankQrPresetById(presetId);
 };
 
 export const setSelectedECardPreset = async (userId, presetId) => {
-  await restRequest(`/profiles?id=eq.${encodeURIComponent(userId)}`, {
-    method: 'PATCH',
-    body: { selected_ecard_id: presetId },
-    prefer: 'return=minimal',
-  });
-  await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'PATCH',
-    body: { last_used_at: new Date().toISOString() },
-    prefer: 'return=minimal',
-  });
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'profiles', userId), { selected_ecard_id: presetId });
+  batch.update(doc(db, 'user_ecards', presetId), { last_used_at: serverTimestamp() });
+  await batch.commit();
 };
 
 export const setSelectedBankQrPreset = async (userId, presetId) => {
-  await restRequest(`/profiles?id=eq.${encodeURIComponent(userId)}`, {
-    method: 'PATCH',
-    body: { selected_bank_qr_id: presetId },
-    prefer: 'return=minimal',
-  });
-  await restRequest(`/user_bank_qrs?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'PATCH',
-    body: { last_used_at: new Date().toISOString() },
-    prefer: 'return=minimal',
-  });
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'profiles', userId), { selected_bank_qr_id: presetId });
+  batch.update(doc(db, 'user_bank_qrs', presetId), { last_used_at: serverTimestamp() });
+  await batch.commit();
 };
 
-const fetchECardPresetById = async (presetId) => {
-  const data = await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}&select=*,social`);
-  return firstRow(data);
+// Also clears the profile's selected_*_id pointer in the same transaction if
+// it pointed at the preset being deleted — otherwise the pointer dangles and
+// AccountSyncService keeps trying to resolve a preset that no longer exists,
+// silently falling back to whatever stale local copy was already there.
+const deleteWithCounterDecrement = async (collectionName, countField, selectedField, presetId, userId) => {
+  const presetRef = doc(db, collectionName, presetId);
+
+  if (!userId) {
+    await deleteDoc(presetRef);
+    return false;
+  }
+
+  const profileRef = doc(db, 'profiles', userId);
+  let wasSelected = false;
+
+  await runTransaction(db, async (transaction) => {
+    const profileSnap = await transaction.get(profileRef);
+    const profileData = profileSnap.exists() ? profileSnap.data() : {};
+    const currentCount = profileData[countField] || 0;
+    wasSelected = profileData[selectedField] === presetId;
+
+    const profileUpdates = { [countField]: Math.max(0, currentCount - 1) };
+    if (wasSelected) {
+      profileUpdates[selectedField] = null;
+    }
+
+    transaction.delete(presetRef);
+    transaction.set(profileRef, profileUpdates, { merge: true });
+  });
+
+  return wasSelected;
 };
 
+// Returns true if the deleted preset was the account's active/selected one —
+// callers should clear the matching local section when this is true.
 export const deleteECardPreset = async (presetId) => {
   const preset = await fetchECardPresetById(presetId);
 
-  await restRequest(`/user_ecards?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'DELETE',
-    prefer: 'return=minimal',
-  });
+  const wasSelected = await deleteWithCounterDecrement(
+    'user_ecards', 'ecard_preset_count', 'selected_ecard_id', presetId, preset?.user_id
+  );
 
   await deleteECardAvatarFromStorage(getECardAvatarUrl(preset));
+  await deleteECardAvatarFromStorage(getECardLogoUrl(preset));
+
+  return wasSelected;
 };
 
 export const deleteBankQrPreset = async (presetId) => {
-  await restRequest(`/user_bank_qrs?id=eq.${encodeURIComponent(presetId)}`, {
-    method: 'DELETE',
-    prefer: 'return=minimal',
-  });
+  const preset = await fetchBankQrPresetById(presetId);
+
+  return deleteWithCounterDecrement(
+    'user_bank_qrs', 'bank_qr_preset_count', 'selected_bank_qr_id', presetId, preset?.user_id
+  );
 };
