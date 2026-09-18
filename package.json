@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "eas-build-pre-install": "gem install cocoapods -v 1.17.0"
+    "eas-build-pre-install": "if [ \"$EAS_BUILD_PLATFORM\" = \"ios\" ]; then gem install cocoapods -v 1.17.0; fi"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
