@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
-import { Camera, Check, ChevronDown, CreditCard, Globe, Pencil, Save, Search, Share2, Trash2, User as UserIcon, X } from 'lucide-react-native';
+import { Camera, Check, ChevronDown, CreditCard, Globe, Pencil, Plus, Save, Search, Share2, Trash2, User as UserIcon, X } from 'lucide-react-native';
 import ScreenScaffold from '../components/ScreenScaffold';
 import Footer from '../components/Footer';
 import { useTheme } from '../constants/Theme';
@@ -18,12 +18,16 @@ import {
   fetchBankQrPresets,
   fetchECardPresets,
   fetchProfileWithSelectedPresets,
+  isPresetLimitPolicyError,
+  saveBankQrPreset,
+  saveECardPreset,
   setSelectedBankQrPreset,
   setSelectedECardPreset,
   updateBankQrPreset,
   updateECardPreset
 } from '../services/AccountPresetService';
-import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/SupabaseStorageService';
+import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/FirebaseStorageService';
+import { buildBankQrCacheKey, fetchBankList } from '../services/VietQrService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 
@@ -154,6 +158,10 @@ export default function AccountPresetsScreen({ navigation, route }) {
   const { language } = useAppPreferences();
   const { user, isAuthReady } = useAuth();
   const t = useCallback((key) => getTranslation(language, key), [language]);
+
+  const showPresetLimitAlert = useCallback(() => {
+    Alert.alert(t('myCard.presetLimitTitle'), t('myCard.presetLimitMessage'));
+  }, [t]);
   const kind = route?.params?.kind === 'bank' ? 'bank' : 'ecard';
   const isBank = kind === 'bank';
   const [items, setItems] = useState([]);
@@ -276,6 +284,38 @@ export default function AccountPresetsScreen({ navigation, route }) {
               } else {
                 await deleteECardPreset(item.id);
               }
+
+              // Deleting the preset the widget/local copy is currently
+              // mirroring would otherwise leave that stale data on screen
+              // until something else happens to refresh it — clear it now.
+              StorageService.init();
+              const currentData = await StorageService.getUserData().catch(() => null);
+              const source = currentData ? StorageService.getAccountPresetSource(currentData) : {};
+              const isLocallyActive = isBank
+                ? source.bankPresetId === item.id
+                : source.ecardPresetId === item.id;
+
+              if (isLocallyActive) {
+                const nextData = StorageService.clearAccountPresetSections(
+                  currentData,
+                  isBank ? { bank: true } : { ecard: true }
+                );
+                if (nextData) {
+                  await StorageService.setUserData(nextData);
+                } else {
+                  await StorageService.clearUserData();
+                }
+              }
+
+              if (isBank) {
+                const cacheKey = buildBankQrCacheKey({
+                  bankCode: item.bank_code,
+                  accountNumber: item.account_number,
+                  accountHolderName: item.account_holder_name,
+                });
+                await StorageService.removeCachedBankQrImage(cacheKey).catch(() => null);
+              }
+
               await load();
             } catch (error) {
               Alert.alert(t('common.error'), error?.message || t('accountPresets.deleteFailed'));
@@ -293,6 +333,13 @@ export default function AccountPresetsScreen({ navigation, route }) {
     setEditForm(isBank ? bankPresetToEditForm(item) : ecardPresetToEditForm(item));
   };
 
+  const handleCreateNew = () => {
+    if (!user?.id) return;
+
+    setEditingItem({ __isNew: true });
+    setEditForm(isBank ? bankPresetToEditForm({}) : ecardPresetToEditForm({}));
+  };
+
   const handleCancelEdit = () => {
     if (savingEdit) return;
 
@@ -306,14 +353,19 @@ export default function AccountPresetsScreen({ navigation, route }) {
       Alert.alert(t('common.error'), t('myCard.bankHolderRequired'));
       return;
     }
+    if (!isBank && !compactText(editForm.full_name)) {
+      Alert.alert(t('common.error'), t('myCard.nameRequired'));
+      return;
+    }
 
+    const isCreating = Boolean(editingItem.__isNew);
     setSavingEdit(true);
     let uploadedAvatar = null;
     let updateSucceeded = false;
-    const isEditingSelectedPreset = selectedId === editingItem.id;
+    const isEditingSelectedPreset = !isCreating && selectedId === editingItem.id;
     try {
       let formForPayload = editForm;
-      const previousAvatarUrl = !isBank ? getECardPresetAvatarUrl(editingItem) : '';
+      const previousAvatarUrl = !isBank && !isCreating ? getECardPresetAvatarUrl(editingItem) : '';
       if (!isBank && editForm.avatar_asset) {
         uploadedAvatar = await uploadImageToBucket({
           bucket: 'ecards',
@@ -330,24 +382,41 @@ export default function AccountPresetsScreen({ navigation, route }) {
       }
 
       const payload = isBank ? bankEditFormToPayload(formForPayload) : ecardEditFormToPayload(formForPayload);
-      const updated = isBank
-        ? await updateBankQrPreset(editingItem.id, payload)
-        : await updateECardPreset(editingItem.id, payload, editingItem);
+      let updated;
+
+      if (isCreating) {
+        updated = isBank
+          ? await saveBankQrPreset({
+            userId: user.id,
+            data: bankQrPresetToLocalData(payload),
+            bankDisplayName: payload.bank_name,
+            label: payload.label,
+          })
+          : await saveECardPreset({
+            userId: user.id,
+            data: ecardPresetToLocalData(payload),
+            label: payload.label,
+          });
+      } else {
+        updated = isBank
+          ? await updateBankQrPreset(editingItem.id, payload)
+          : await updateECardPreset(editingItem.id, payload, editingItem);
+      }
       updateSucceeded = true;
 
-      if (isEditingSelectedPreset && updated) {
+      if ((isCreating || isEditingSelectedPreset) && updated) {
         StorageService.init();
         const currentData = await StorageService.getUserData() || {};
         const patch = isBank ? bankQrPresetToLocalData(updated) : ecardPresetToLocalData(updated);
         const sourceUpdate = isBank
-          ? { bankPresetId: editingItem.id }
-          : { ecardPresetId: editingItem.id };
+          ? { bankPresetId: updated.id }
+          : { ecardPresetId: updated.id };
         await StorageService.setUserData(
           StorageService.markAccountPresetSource({ ...currentData, ...patch }, sourceUpdate)
         );
       }
 
-      if (!isBank) {
+      if (!isBank && !isCreating) {
         await deleteStorageFileFromUrlIfChanged({
           previousUrl: previousAvatarUrl,
           nextUrl: payload.avatar_url,
@@ -360,8 +429,8 @@ export default function AccountPresetsScreen({ navigation, route }) {
       await load();
       Alert.alert(
         t('common.success'),
-        t('accountPresets.editSuccess'),
-        isEditingSelectedPreset
+        isCreating ? t('accountPresets.createSuccess') : t('accountPresets.editSuccess'),
+        (isCreating || isEditingSelectedPreset)
           ? [{
             text: t('common.close'),
             onPress: () => navigation.getParent()?.navigate('MyCardTab', { refreshRequestId: Date.now() }),
@@ -372,7 +441,14 @@ export default function AccountPresetsScreen({ navigation, route }) {
       if (!updateSucceeded && uploadedAvatar?.path) {
         await deleteStorageFile({ bucket: 'ecards', path: uploadedAvatar.path }).catch(() => null);
       }
-      Alert.alert(t('common.error'), error?.message || t('accountPresets.editFailed'));
+      if (isPresetLimitPolicyError(error)) {
+        showPresetLimitAlert();
+      } else {
+        Alert.alert(
+          t('common.error'),
+          error?.message || (isCreating ? t('accountPresets.createFailed') : t('accountPresets.editFailed'))
+        );
+      }
     } finally {
       setSavingEdit(false);
     }
@@ -396,6 +472,16 @@ export default function AccountPresetsScreen({ navigation, route }) {
         refreshing={refreshing}
         onRefresh={handleRefresh}
         footer={<Footer />}
+        headerRight={user ? (
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: colors.card }]}
+            onPress={handleCreateNew}
+            accessibilityRole="button"
+            accessibilityLabel={t('accountPresets.addNew')}
+          >
+            <Plus color={colors.primary} size={22} />
+          </TouchableOpacity>
+        ) : null}
       >
         {!user ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
@@ -408,6 +494,13 @@ export default function AccountPresetsScreen({ navigation, route }) {
             <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
               {isBank ? t('accountPresets.emptyBankDesc') : t('accountPresets.emptyECardDesc')}
             </Text>
+            <TouchableOpacity
+              style={[styles.emptyAddButton, { backgroundColor: colors.primary }]}
+              onPress={handleCreateNew}
+            >
+              <Plus color="#fff" size={18} />
+              <Text style={styles.emptyAddButtonText}>{t('accountPresets.addNew')}</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.list}>
@@ -432,6 +525,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
       <PresetEditModal
         visible={Boolean(editingItem)}
         isBank={isBank}
+        isNew={Boolean(editingItem?.__isNew)}
         form={editForm}
         saving={savingEdit}
         userId={user?.id}
@@ -527,7 +621,7 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onSha
   );
 };
 
-const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onChange, onCancel, onAvatarPicked, onSave }) => {
+const PresetEditModal = ({ visible, isBank, isNew, form, saving, userId, colors, t, onChange, onCancel, onAvatarPicked, onSave }) => {
   const [countryPickerTarget, setCountryPickerTarget] = useState(null);
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [banks, setBanks] = useState([]);
@@ -549,13 +643,8 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
 
     setLoadingBanks(true);
     try {
-      const response = await fetch('https://api.vietqr.io/v2/banks');
-      const result = await response.json();
-      if (result.code === '00') {
-        setBanks(result.data || []);
-      }
-    } catch (error) {
-      Alert.alert(t('common.error'), error?.message || t('accountPresets.loadFailed'));
+      const { banks: bankList } = await fetchBankList();
+      setBanks(bankList);
     } finally {
       setLoadingBanks(false);
     }
@@ -697,7 +786,9 @@ const PresetEditModal = ({ visible, isBank, form, saving, userId, colors, t, onC
         <View style={[styles.editSheet, { backgroundColor: colors.card }]}>
           <View style={styles.editHeader}>
             <Text style={[styles.editTitle, { color: colors.text }]}>
-              {isBank ? t('accountPresets.editBankTitle') : t('accountPresets.editECardTitle')}
+              {isNew
+                ? (isBank ? t('accountPresets.newBankTitle') : t('accountPresets.newECardTitle'))
+                : (isBank ? t('accountPresets.editBankTitle') : t('accountPresets.editECardTitle'))}
             </Text>
             <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={handleCancel}>
               <X color={colors.textSecondary} size={20} />
@@ -986,6 +1077,9 @@ const styles = StyleSheet.create({
   emptyCard: { borderRadius: 24, padding: 22, alignItems: 'center' },
   emptyTitle: { fontSize: 17, fontWeight: '900', textAlign: 'center' },
   emptyDesc: { marginTop: 6, fontSize: 13, lineHeight: 19, fontWeight: '600', textAlign: 'center' },
+  emptyAddButton: { marginTop: 16, minHeight: 46, borderRadius: 15, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  emptyAddButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  addButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   list: { gap: 12 },
   presetCard: { borderRadius: 22, padding: 14 },
   presetTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },

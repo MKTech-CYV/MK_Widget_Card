@@ -39,6 +39,7 @@ struct UserData: Codable {
     let bio: String?
     let avatar: String?
     let avatarUrl: String?
+    let logoUrl: String?
     let bankName: String?
     let bankAccount: String?
     let bankAccountHolderName: String?
@@ -87,6 +88,7 @@ extension UserData {
         bio: nil,
         avatar: nil,
         avatarUrl: nil,
+        logoUrl: nil,
         bankName: "MB",
         bankAccount: "0335337802",
         bankAccountHolderName: "TRAN MINH KHOI",
@@ -106,20 +108,6 @@ extension UserData {
     
     var formattedPhone: String {
         normalizedPhone.isEmpty ? "" : "+\(normalizedCountryCode)\(normalizedPhone)"
-    }
-
-    func formattedSocialPhone(_ phone: String?, countryCode: String?) -> String {
-        let digits = (phone ?? "").filter { $0.isNumber }
-        let localPhone = String(digits.drop(while: { $0 == "0" }))
-        guard !localPhone.isEmpty else { return "" }
-
-        let countryDigits = (countryCode ?? self.countryCode ?? "84").filter { $0.isNumber }
-        let normalizedCountry = countryDigits.isEmpty ? "84" : countryDigits
-        if localPhone.hasPrefix(normalizedCountry), localPhone.count > normalizedCountry.count {
-            return "+\(localPhone)"
-        }
-
-        return "+\(normalizedCountry)\(localPhone)"
     }
 
     var hasContactInfo: Bool {
@@ -155,28 +143,9 @@ extension UserData {
         }
 
         add("TITLE", title)
-        add("URL;TYPE=WORK", website)
-
-        let escapedAddress = escapeVCardValue(address)
-        if !escapedAddress.isEmpty {
-            lines.append("ADR;TYPE=WORK:;;\(escapedAddress);;;;")
-        }
-
-        [
-            ("linkedin", linkedin),
-            ("facebook", facebook),
-            ("zalo", formattedSocialPhone(zalo, countryCode: zaloCountryCode)),
-            ("whatsapp", formattedSocialPhone(whatsapp, countryCode: whatsappCountryCode)),
-            ("telegram", telegram)
-        ].forEach { type, value in
-            let escaped = escapeVCardValue(value)
-            if !escaped.isEmpty {
-                lines.append("X-SOCIALPROFILE;TYPE=\(type):\(escaped)")
-            }
-        }
-
-        add("PHOTO;VALUE=URI", avatarUrl)
-        add("NOTE", bio)
+        // Widget QR stays minimal on purpose (name/phone/email/company/title
+        // only) so it scans reliably at a glance. Website, address, socials,
+        // avatar photo and bio are only sent through the "Share" link.
         lines.append("END:VCARD")
         return lines.joined(separator: "\n")
     }
@@ -315,7 +284,7 @@ struct ContactQRSmallView: View {
             ZStack {
                 if let user = entry.userData, user.hasContactInfo {
                     WidgetQRSurface(size: surfaceSize) {
-                        QRWithLogo(content: user.vCard, size: qrSize)
+                        QRWithLogo(content: user.vCard, size: qrSize, logoUrl: user.logoUrl)
                     }
                 } else {
                     WidgetQRSurface(size: surfaceSize) {
@@ -357,15 +326,18 @@ struct ContactMediumView: View {
     var entry: SimpleEntry
     var body: some View {
         let user = entry.userData
-        
+
         GeometryReader { geometry in
-            let surfaceSize = min(132, max(92, geometry.size.height - 16))
+            let padding: CGFloat = 8
+            let availableHeight = geometry.size.height - padding * 2
+            let maxByWidth = geometry.size.width * 0.42
+            let surfaceSize = max(92, min(availableHeight, maxByWidth))
             let qrSize = max(1, surfaceSize - 8)
 
             HStack(spacing: 10) {
                 if let user, user.hasContactInfo {
                     WidgetQRSurface(size: surfaceSize) {
-                        QRWithLogo(content: user.vCard, size: qrSize)
+                        QRWithLogo(content: user.vCard, size: qrSize, logoUrl: user.logoUrl)
                     }
                 } else {
                     WidgetQRSurface(size: surfaceSize) {
@@ -373,11 +345,11 @@ struct ContactMediumView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     WidgetBadge(text: "ECARD")
 
                     Text(user?.fullName.isEmpty == false ? user?.fullName ?? "" : "Chưa có eCard")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundColor(WidgetColors.text)
                         .lineLimit(1)
 
@@ -390,10 +362,17 @@ struct ContactMediumView: View {
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(WidgetColors.accent)
                         .lineLimit(1)
+
+                    if let phone = user?.formattedPhone, !phone.isEmpty {
+                        Text(phone)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(WidgetColors.secondaryText)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(8)
+            .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
@@ -404,9 +383,12 @@ struct BankMediumView: View {
     var entry: SimpleEntry
     var body: some View {
         let user = entry.userData
-        
+
         GeometryReader { geometry in
-            let surfaceSize = min(132, max(92, geometry.size.height - 16))
+            let padding: CGFloat = 8
+            let availableHeight = geometry.size.height - padding * 2
+            let maxByWidth = geometry.size.width * 0.42
+            let surfaceSize = max(92, min(availableHeight, maxByWidth))
             let qrSize = max(1, surfaceSize - 8)
 
             HStack(spacing: 10) {
@@ -424,23 +406,23 @@ struct BankMediumView: View {
                     WidgetBadge(text: "VIETQR")
 
                     Text(user?.hasBankInfo == true ? user?.bankAccountHolderDisplayName ?? "" : "Chưa có tài khoản")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundColor(WidgetColors.text)
                         .lineLimit(1)
 
                     Text(user?.bankDisplayName ?? "Mở app để cập nhật")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(WidgetColors.secondaryText)
                         .lineLimit(1)
 
                     Text(user?.bankAccount ?? "")
-                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .font(.system(size: 14, weight: .black, design: .monospaced))
                         .foregroundColor(WidgetColors.accent)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(8)
+            .padding(padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .widgetBackgroundCompat(WidgetColors.background)
@@ -452,10 +434,11 @@ struct BankMediumView: View {
 struct QRWithLogo: View {
     let content: String
     let size: CGFloat
-    
+    var logoUrl: String? = nil
+
     var body: some View {
         ZStack {
-            if let qrImage = generateQRCode(from: content, targetSize: size, logo: loadAppLogo()) {
+            if let qrImage = generateQRCode(from: content, targetSize: size, logo: downloadImage(from: logoUrl) ?? loadAppLogo()) {
                 Image(uiImage: qrImage)
                     .interpolation(.none)
                     .renderingMode(.original)
@@ -552,6 +535,14 @@ struct QRWithLogo: View {
                 )
             }
         }
+    }
+
+    private func downloadImage(from urlString: String?) -> UIImage? {
+        guard let urlString, !urlString.isEmpty, let url = URL(string: urlString),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return UIImage(data: data)
     }
 
     private func loadAppLogo() -> UIImage? {

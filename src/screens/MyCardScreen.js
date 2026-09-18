@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AtSign,
@@ -32,6 +32,7 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  QrCode,
   Save,
   Search,
   Share2,
@@ -45,7 +46,6 @@ import AppRefreshControl from '../components/AppRefreshControl';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { useRemoteSettings } from '../context/RemoteSettingsContext';
-import { useRevenueCat } from '../context/RevenueCatContext';
 import { getTranslation } from '../constants/i18n';
 import {
   bankQrPresetToLocalData,
@@ -62,8 +62,9 @@ import {
   updateBankQrPreset,
   updateECardPreset
 } from '../services/AccountPresetService';
-import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/SupabaseStorageService';
-import { REVENUECAT_NATIVE_MODULE_UNAVAILABLE } from '../services/RevenueCatService';
+import { pullSelectedAccountDataToLocal } from '../services/AccountSyncService';
+import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBucket } from '../services/FirebaseStorageService';
+import { buildBankQrCacheKey, cacheBankQrImage, fetchBankList, getCachedBankQrImage } from '../services/VietQrService';
 import {
   buildVCard,
   formatInternationalPhone,
@@ -115,6 +116,7 @@ const DEFAULT_ECARD_FORM = {
   bio: '',
   avatar: null,
   avatarUrl: '',
+  logoUrl: '',
   countryCode: '84'
 };
 
@@ -200,8 +202,8 @@ export default function MyCardScreen({ route }) {
   const insets = useSafeAreaInsets();
   const { language } = useAppPreferences();
   const { user } = useAuth();
-  const { paymentEnabled, refreshRemoteSettings } = useRemoteSettings();
-  const { openPaywall } = useRevenueCat();
+  const navigation = useNavigation();
+  const { refreshRemoteSettings } = useRemoteSettings();
   const t = (key) => getTranslation(language, key);
   const [userData, setUserData] = useState(null);
   const [editingSection, setEditingSection] = useState(null);
@@ -212,6 +214,8 @@ export default function MyCardScreen({ route }) {
   const [showBankModal, setShowBankModal] = useState(false);
   const [bankQrLoading, setBankQrLoading] = useState(false);
   const [bankQrFailed, setBankQrFailed] = useState(false);
+  const [bankQrCachedUri, setBankQrCachedUri] = useState(null);
+  const [bankQrUseCache, setBankQrUseCache] = useState(false);
   const [banks, setBanks] = useState([]);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [refreshingHome, setRefreshingHome] = useState(false);
@@ -231,6 +235,8 @@ export default function MyCardScreen({ route }) {
   const [presetApplyActionId, setPresetApplyActionId] = useState(null);
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
+  const previousUserIdRef = useRef(user?.id);
+  const bankQrErroredRef = useRef(false);
 
   useEffect(() => {
     StorageService.init();
@@ -238,9 +244,27 @@ export default function MyCardScreen({ route }) {
     fetchBanks();
   }, []);
 
+  // Only reset out of edit mode on an actual sign-in/sign-out transition —
+  // not on every refocus (loadData() also reruns on focus, and forcing the
+  // form closed there would interrupt someone mid-edit just for switching
+  // tabs and back). Without this, logging back in with an account that
+  // already has a saved eCard would still show the edit form pre-filled
+  // instead of the card preview, because editingSection stays whatever it
+  // was left at (e.g. 'ecard' from the empty/logged-out state).
+  useEffect(() => {
+    if (user?.id !== previousUserIdRef.current) {
+      previousUserIdRef.current = user?.id;
+      setEditingSection(null);
+    }
+  }, [user?.id]);
+
   useFocusEffect(useCallback(() => {
     loadData();
-  }, []));
+    // Depending on user?.id (not []) matters: without it, this closure keeps
+    // referencing the `loadData`/`user` from whichever render first created
+    // it — after sign-in, refocusing this screen would keep checking a
+    // stale null `user` and never pull the account's selected preset down.
+  }, [user?.id]));
 
   useEffect(() => {
     const requestedSection = route?.params?.editSection;
@@ -259,20 +283,16 @@ export default function MyCardScreen({ route }) {
   const fetchBanks = async () => {
     setLoadingBanks(true);
     try {
-      const response = await fetch('https://api.vietqr.io/v2/banks');
-      const result = await response.json();
-      if (result.code === '00') {
-        setBanks(result.data);
+      const { banks: bankList } = await fetchBankList();
+      if (bankList.length) {
+        setBanks(bankList);
       }
-    } catch {
-      setBanks([]);
     } finally {
       setLoadingBanks(false);
     }
   };
 
-  const loadData = async () => {
-    const data = await StorageService.getUserData();
+  const applyLocalData = (data) => {
     if (data) {
       const nextECardForm = toECardForm(data);
       const nextBankForm = toBankForm(data);
@@ -287,6 +307,25 @@ export default function MyCardScreen({ route }) {
       setBankForm(DEFAULT_BANK_FORM);
       setEditingSection('ecard');
     }
+  };
+
+  const loadData = async () => {
+    const localData = await StorageService.getUserData().catch(() => null);
+
+    // Signed-in accounts treat the backend as the source of truth: pull the
+    // selected eCard/QR Bank presets before rendering so we don't briefly
+    // show stale/local data. Falls back to the local copy when offline.
+    if (user?.id) {
+      try {
+        const merged = await pullSelectedAccountDataToLocal(user.id, localData);
+        applyLocalData(merged || localData);
+        return;
+      } catch {
+        // Offline or request failed: fall through to the local/cached copy.
+      }
+    }
+
+    applyLocalData(localData);
   };
 
   const handleHomeRefresh = async () => {
@@ -328,6 +367,7 @@ export default function MyCardScreen({ route }) {
     }
   };
 
+
   const ensureECardAvatarUploadedWithInfo = async (data) => {
     const avatar = `${data?.avatar || ''}`.trim();
     const avatarUrl = `${data?.avatarUrl || ''}`.trim();
@@ -351,12 +391,36 @@ export default function MyCardScreen({ route }) {
       prefix: 'ecard-avatar',
     });
 
+    // Each eCard preset has its own independent photo — this no longer
+    // touches the account avatar (shown on the Account tab, which defaults
+    // to the signed-in Google/Apple profile photo and is only changed from
+    // the Account screen directly).
     return {
       data: {
         ...data,
         avatar: upload.publicUrl,
         avatarUrl: upload.publicUrl,
       },
+      upload,
+    };
+  };
+
+  const ensureECardLogoUploadedWithInfo = async (data) => {
+    const logo = `${data?.logoUrl || ''}`.trim();
+
+    if (!user?.id || !logo || !logo.startsWith('data:')) {
+      return { data, upload: null };
+    }
+
+    const upload = await uploadImageToBucket({
+      bucket: 'ecards',
+      userId: user.id,
+      dataUri: logo,
+      prefix: 'ecard-logo',
+    });
+
+    return {
+      data: { ...data, logoUrl: upload.publicUrl },
       upload,
     };
   };
@@ -378,34 +442,7 @@ export default function MyCardScreen({ route }) {
 
   const showAccountPresetSaveError = (error) => {
     if (isPresetLimitPolicyError(error)) {
-      const actions = [{ text: t('common.close'), style: 'cancel' }];
-
-      if (paymentEnabled) {
-        actions.push({
-          text: t('myCard.premiumPresetLimitAction'),
-          onPress: async () => {
-            try {
-              const result = await openPaywall({ onlyIfNeeded: true });
-              if (result?.entitlementActive) {
-                Alert.alert(t('common.success'), t('revenueCat.purchaseSuccess'));
-              }
-            } catch (paywallError) {
-              Alert.alert(
-                t('common.error'),
-                paywallError?.code === REVENUECAT_NATIVE_MODULE_UNAVAILABLE
-                  ? t('revenueCat.paywallUnavailable')
-                  : paywallError?.message || t('revenueCat.paywallUnavailable')
-              );
-            }
-          },
-        });
-      }
-
-      Alert.alert(
-        paymentEnabled ? t('myCard.premiumPresetLimitTitle') : t('myCard.premiumPresetLimitDisabledTitle'),
-        paymentEnabled ? t('myCard.premiumPresetLimitMessage') : t('myCard.premiumPresetLimitDisabledMessage'),
-        actions
-      );
+      Alert.alert(t('myCard.presetLimitTitle'), t('myCard.presetLimitMessage'));
       return;
     }
 
@@ -437,6 +474,7 @@ export default function MyCardScreen({ route }) {
 
     setSavingDestination('account');
     let uploadedAvatar = null;
+    let uploadedLogo = null;
     let nextData = pendingAccountPreset.data;
 
     try {
@@ -444,6 +482,10 @@ export default function MyCardScreen({ route }) {
         const uploadResult = await ensureECardAvatarUploadedWithInfo(nextData);
         nextData = uploadResult.data;
         uploadedAvatar = uploadResult.upload;
+
+        const logoUploadResult = await ensureECardLogoUploadedWithInfo(nextData);
+        nextData = logoUploadResult.data;
+        uploadedLogo = logoUploadResult.upload;
 
         const preset = await saveECardPreset({ userId: user.id, data: nextData, label });
         nextData = StorageService.markAccountPresetSource(nextData, { ecardPresetId: preset?.id });
@@ -467,6 +509,7 @@ export default function MyCardScreen({ route }) {
     } catch (error) {
       if (!error?.path || error.method === 'POST' || isPresetLimitPolicyError(error)) {
         await deleteUploadedECardAvatar(uploadedAvatar);
+        await deleteUploadedECardAvatar(uploadedLogo);
       }
       showAccountPresetSaveError(error);
     } finally {
@@ -581,13 +624,19 @@ export default function MyCardScreen({ route }) {
 
     setPresetUpdateActionId(preset.id);
     let uploadedAvatar = null;
+    let uploadedLogo = null;
     try {
       let nextData = pendingPresetData;
       const previousAvatarUrl = presetUpdateKind === 'ecard' ? getECardPresetAvatarUrl(preset) : '';
+      const previousLogoUrl = presetUpdateKind === 'ecard' ? trimText(preset.logo_url) : '';
       if (presetUpdateKind === 'ecard') {
         const uploadResult = await ensureECardAvatarUploadedWithInfo(nextData);
         nextData = uploadResult.data;
         uploadedAvatar = uploadResult.upload;
+
+        const logoUploadResult = await ensureECardLogoUploadedWithInfo(nextData);
+        nextData = logoUploadResult.data;
+        uploadedLogo = logoUploadResult.upload;
       }
 
       const payload = buildPresetUpdatePayload(presetUpdateKind, nextData, preset);
@@ -599,6 +648,11 @@ export default function MyCardScreen({ route }) {
         await deleteStorageFileFromUrlIfChanged({
           previousUrl: previousAvatarUrl,
           nextUrl: nextData.avatarUrl || nextData.avatar,
+          bucket: 'ecards',
+        }).catch(() => null);
+        await deleteStorageFileFromUrlIfChanged({
+          previousUrl: previousLogoUrl,
+          nextUrl: nextData.logoUrl,
           bucket: 'ecards',
         }).catch(() => null);
         nextData = StorageService.markAccountPresetSource(nextData, { ecardPresetId: preset.id });
@@ -614,9 +668,67 @@ export default function MyCardScreen({ route }) {
       );
     } catch (error) {
       await deleteUploadedECardAvatar(uploadedAvatar);
+      await deleteUploadedECardAvatar(uploadedLogo);
       Alert.alert(t('common.error'), error?.message || t('myCard.updatePresetFailed'));
     } finally {
       setPresetUpdateActionId(null);
+    }
+  };
+
+  // Signed-in users don't get a "local only" copy anymore: every save
+  // upserts the account's linked eCard/QR Bank preset (creating the first
+  // one if none exists yet) so the backend always reflects what's shown.
+  // Free accounts are capped at one preset by RLS, which surfaces as
+  // isPresetLimitPolicyError and is handled by showAccountPresetSaveError.
+  const syncPrimaryToBackend = async (kind, nextData) => {
+    if (!user?.id) return nextData;
+
+    const source = StorageService.getAccountPresetSource(userData || {});
+    const linkedId = kind === 'bank' ? source.bankPresetId : source.ecardPresetId;
+    let dataForLocal = nextData;
+    let uploadedAvatar = null;
+    let uploadedLogo = null;
+
+    try {
+      if (kind === 'ecard') {
+        const avatarResult = await ensureECardAvatarUploadedWithInfo(dataForLocal);
+        dataForLocal = avatarResult.data;
+        uploadedAvatar = avatarResult.upload;
+
+        const logoResult = await ensureECardLogoUploadedWithInfo(dataForLocal);
+        dataForLocal = logoResult.data;
+        uploadedLogo = logoResult.upload;
+      }
+
+      if (linkedId) {
+        const existingPresets = kind === 'bank' ? await fetchBankQrPresets() : await fetchECardPresets();
+        const existing = existingPresets.find(item => item.id === linkedId) || {};
+        const payload = buildPresetUpdatePayload(kind, dataForLocal, existing);
+
+        if (kind === 'bank') {
+          await updateBankQrPreset(linkedId, payload);
+        } else {
+          await updateECardPreset(linkedId, payload, existing);
+        }
+
+        return StorageService.markAccountPresetSource(
+          dataForLocal,
+          kind === 'bank' ? { bankPresetId: linkedId } : { ecardPresetId: linkedId }
+        );
+      }
+
+      const preset = kind === 'bank'
+        ? await saveBankQrPreset({ userId: user.id, data: dataForLocal, bankDisplayName: getBankName(dataForLocal.bankName) })
+        : await saveECardPreset({ userId: user.id, data: dataForLocal });
+
+      return StorageService.markAccountPresetSource(
+        dataForLocal,
+        kind === 'bank' ? { bankPresetId: preset?.id } : { ecardPresetId: preset?.id }
+      );
+    } catch (error) {
+      await deleteUploadedECardAvatar(uploadedAvatar);
+      await deleteUploadedECardAvatar(uploadedLogo);
+      throw error;
     }
   };
 
@@ -653,6 +765,19 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
+    if (user?.id) {
+      setSavingDestination('local');
+      try {
+        const synced = await syncPrimaryToBackend('ecard', nextData);
+        await persistData(synced, t('myCard.ecardSaveSuccess'));
+      } catch (error) {
+        showAccountPresetSaveError(error);
+      } finally {
+        setSavingDestination(null);
+      }
+      return;
+    }
+
     await persistData(
       StorageService.clearAccountPresetSource(nextData, 'ecard'),
       t('myCard.ecardSaveSuccess')
@@ -679,6 +804,19 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
+    if (user?.id) {
+      setSavingDestination('local');
+      try {
+        const synced = await syncPrimaryToBackend('bank', nextData);
+        await persistData(synced, t('myCard.bankSaveSuccess'));
+      } catch (error) {
+        showAccountPresetSaveError(error);
+      } finally {
+        setSavingDestination(null);
+      }
+      return;
+    }
+
     await persistData(
       StorageService.clearAccountPresetSource(nextData, 'bank'),
       t('myCard.bankSaveSuccess')
@@ -690,8 +828,26 @@ export default function MyCardScreen({ route }) {
     return bank ? bank.shortName || bank.name : code;
   };
 
+  const requireSignInToShare = () => {
+    Alert.alert(
+      t('myCard.shareSignInRequiredTitle'),
+      t('myCard.shareSignInRequiredMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('auth.signIn'),
+          onPress: () => navigation.navigate('AccountTab', { screen: 'AccountDetail' }),
+        },
+      ]
+    );
+  };
+
   const shareECard = async () => {
     if (!userData) return;
+    if (!user?.id) {
+      requireSignInToShare();
+      return;
+    }
 
     try {
       const url = buildECardShareUrl(userData, language);
@@ -703,6 +859,10 @@ export default function MyCardScreen({ route }) {
 
   const shareBankQr = async () => {
     if (!userData) return;
+    if (!user?.id) {
+      requireSignInToShare();
+      return;
+    }
 
     try {
       const url = buildBankQrShareUrl(userData);
@@ -719,17 +879,65 @@ export default function MyCardScreen({ route }) {
   const bankQrUrl = userData?.bankName && userData?.bankAccount
     ? `https://img.vietqr.io/image/${userData.bankName}-${userData.bankAccount}-qr_only.png?accountName=${encodeURIComponent(userData.bankAccountHolderName || '')}`
     : null;
+  const bankQrCacheKey = bankQrUrl
+    ? buildBankQrCacheKey({
+      bankCode: userData.bankName,
+      accountNumber: userData.bankAccount,
+      accountHolderName: userData.bankAccountHolderName,
+    })
+    : null;
 
-  const vCardContent = userData ? buildVCard(userData) : '';
+  const vCardContent = userData ? buildVCard(userData, { minimal: true }) : '';
   const bankQrSize = Math.min(width * 0.62, 280);
-  const contactQrSize = Math.min(width * 0.58, 280);
-  const contactQrLogoSize = Math.max(32, contactQrSize * 0.16);
+  const contactQrSize = Math.min(width * 0.66, 300);
+  const contactQrLogoSize = Math.max(28, contactQrSize * 0.13);
   const isFormMode = Boolean(editingSection) || !userData;
 
   useEffect(() => {
+    bankQrErroredRef.current = false;
     setBankQrFailed(false);
+    setBankQrUseCache(false);
     setBankQrLoading(Boolean(bankQrUrl));
-  }, [bankQrUrl]);
+
+    if (!bankQrCacheKey) {
+      setBankQrCachedUri(null);
+      return;
+    }
+
+    let isCurrent = true;
+    getCachedBankQrImage(bankQrCacheKey).then((cached) => {
+      if (isCurrent) setBankQrCachedUri(cached || null);
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [bankQrUrl, bankQrCacheKey]);
+
+  // RN's Image fires onLoadEnd on both success AND failure — onError runs
+  // first and flips this ref synchronously (state wouldn't be visible yet
+  // inside the onLoadEnd call in the same event), so onLoadEnd can tell the
+  // two cases apart and skip re-caching a QR image that just failed to load.
+  const handleBankQrLoaded = () => {
+    setBankQrLoading(false);
+    if (bankQrErroredRef.current) {
+      bankQrErroredRef.current = false;
+      return;
+    }
+    if (bankQrCacheKey && bankQrUrl) {
+      cacheBankQrImage(bankQrCacheKey, bankQrUrl);
+    }
+  };
+
+  const handleBankQrError = () => {
+    bankQrErroredRef.current = true;
+    setBankQrLoading(false);
+    if (bankQrCachedUri) {
+      setBankQrUseCache(true);
+    } else {
+      setBankQrFailed(true);
+    }
+  };
 
   const openCountryPicker = (target) => {
     setCountryPickerTarget(target);
@@ -817,20 +1025,23 @@ export default function MyCardScreen({ route }) {
 
   const renderECardForm = () => (
     <View style={[styles.formCard, { backgroundColor: colors.card }]}>
-      <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
-        {ecardForm.avatar ? (
-          <Image source={{ uri: ecardForm.avatar }} style={styles.avatarImage} />
-        ) : (
-          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.background }]}>
-            <Camera color={colors.textSecondary} size={30} />
+      <View style={styles.avatarRow}>
+        <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
+          {ecardForm.avatar ? (
+            <Image source={{ uri: ecardForm.avatar }} style={styles.avatarImage} />
+          ) : (
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.background }]}>
+              <Camera color={colors.textSecondary} size={30} />
+            </View>
+          )}
+          <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
+            <Camera color="#fff" size={14} />
           </View>
-        )}
-        <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-          <Camera color="#fff" size={14} />
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.sectionDivider}>{t('myCard.personalSection')}</Text>
+      <Text style={styles.sectionHint}>{t('myCard.personalSectionHint')}</Text>
 
       <InputField label={t('myCard.fullName')} value={ecardForm.fullName} onChange={v => setECardForm({ ...ecardForm, fullName: v })} placeholder={t('myCard.fullNamePlaceholder')} colors={colors} />
 
@@ -849,6 +1060,7 @@ export default function MyCardScreen({ route }) {
       <InputField label={t('myCard.department')} value={ecardForm.department} onChange={v => setECardForm({ ...ecardForm, department: v })} placeholder={t('myCard.departmentPlaceholder')} colors={colors} />
 
       <Text style={[styles.sectionDivider, { marginTop: 20 }]}>{t('myCard.contactSection')}</Text>
+      <Text style={styles.sectionHint}>{t('myCard.extraSectionHint')}</Text>
       <InputField label={t('myCard.website')} value={ecardForm.website} onChange={v => setECardForm({ ...ecardForm, website: v })} placeholder={t('myCard.websitePlaceholder')} keyboardType="url" autoCapitalize="none" colors={colors} />
       <InputField label={t('myCard.address')} value={ecardForm.address} onChange={v => setECardForm({ ...ecardForm, address: v })} placeholder={t('myCard.addressPlaceholder')} colors={colors} multiline />
 
@@ -984,8 +1196,8 @@ export default function MyCardScreen({ route }) {
           title={t('myCard.confirmSaveTitle')}
           message={confirmMessage}
           confirmLabel={saveLabel}
-          localLabel={t('myCard.saveLocal')}
-          accountLabel={t('myCard.saveAccount')}
+          localLabel={user?.id ? t('myCard.saveSync') : t('myCard.saveLocal')}
+          accountLabel={t('myCard.saveAsNewCard')}
           updatePresetLabel={t('myCard.updateSavedPreset')}
           canSaveToAccount={Boolean(user?.id)}
           canUpdatePreset={Boolean(user?.id)}
@@ -1151,14 +1363,25 @@ export default function MyCardScreen({ route }) {
                 </View>
                 <View style={styles.divider} />
                 <View style={styles.qrSection}>
-                  <View style={styles.qrContainer}>
-                    <ContactQrCode
-                      value={vCardContent}
-                      size={contactQrSize}
-                      logoSize={contactQrLogoSize}
-                    />
-                  </View>
-                  <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
+                  {userData.fullName?.trim() ? (
+                    <>
+                      <View style={styles.qrContainer}>
+                        <ContactQrCode
+                          value={vCardContent}
+                          size={contactQrSize}
+                          logoSize={contactQrLogoSize}
+                          logoUrl={userData.logoUrl}
+                        />
+                      </View>
+                      <Text style={styles.qrHint}>{t('myCard.contactQrHint')}</Text>
+                    </>
+                  ) : (
+                    <View style={[styles.emptyQrPlaceholder, { width: contactQrSize, height: contactQrSize, backgroundColor: colors.background, borderColor: colors.border }]}>
+                      <QrCode color={colors.textSecondary} size={40} />
+                      <Text style={[styles.emptyQrTitle, { color: colors.text }]}>{t('myCard.emptyCardTitle')}</Text>
+                      <Text style={[styles.emptyQrHint, { color: colors.textSecondary }]}>{t('myCard.emptyCardHint')}</Text>
+                    </View>
+                  )}
                 </View>
                 <View style={styles.detailGrid}>
                   <PreviewDetail icon={Phone} label={t('myCard.phone')} value={formatInternationalPhone(userData.countryCode, userData.phone)} colors={colors} />
@@ -1188,22 +1411,28 @@ export default function MyCardScreen({ route }) {
                   <View style={[styles.qrContainer, styles.bankQrContainer]}>
                     {bankQrUrl && !bankQrFailed ? (
                       <View style={[styles.bankQrFrame, { width: bankQrSize, height: bankQrSize }]}>
-                        {bankQrLoading && (
+                        {bankQrLoading && !bankQrUseCache && (
                           <View style={styles.qrLoadingOverlay}>
                             <ActivityIndicator color={colors.primary} />
                           </View>
                         )}
                         <Image
-                          source={{ uri: bankQrUrl }}
+                          source={{ uri: bankQrUseCache && bankQrCachedUri ? bankQrCachedUri : bankQrUrl }}
                           style={styles.bankQrImage}
                           resizeMode="contain"
-                          onLoadStart={() => setBankQrLoading(true)}
-                          onLoadEnd={() => setBankQrLoading(false)}
-                          onError={() => {
-                            setBankQrLoading(false);
-                            setBankQrFailed(true);
+                          onLoadStart={() => {
+                            if (!bankQrUseCache) setBankQrLoading(true);
                           }}
+                          onLoadEnd={handleBankQrLoaded}
+                          onError={handleBankQrError}
                         />
+                        {bankQrUseCache && (
+                          <View style={[styles.offlineBadge, { backgroundColor: colors.card }]}>
+                            <Text style={[styles.offlineBadgeText, { color: colors.textSecondary }]}>
+                              {t('myCard.offlineCachedQr')}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     ) : (
                       <View style={[styles.bankQrPlaceholder, { width: bankQrSize, height: bankQrSize, borderColor: colors.border }]}>
@@ -1247,7 +1476,7 @@ export default function MyCardScreen({ route }) {
   );
 }
 
-const ContactQrCode = ({ value, size, logoSize }) => {
+const ContactQrCode = ({ value, size, logoSize, logoUrl }) => {
   const logoBoxSize = logoSize + 10;
 
   return (
@@ -1255,7 +1484,7 @@ const ContactQrCode = ({ value, size, logoSize }) => {
       <QRCode
         value={value || 'MK eCard'}
         size={size}
-        ecl="Q"
+        ecl="M"
         backgroundColor="#FFFFFF"
         color="#000000"
       />
@@ -1275,7 +1504,7 @@ const ContactQrCode = ({ value, size, logoSize }) => {
         ]}
       >
         <Image
-          source={APP_LOGO}
+          source={logoUrl ? { uri: logoUrl } : APP_LOGO}
           style={[
             styles.qrLogoImage,
             {
@@ -1725,6 +1954,8 @@ const styles = StyleSheet.create({
   formCard: { borderRadius: 24, padding: Spacing.lg, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 15, elevation: 5 },
   formIconHeader: { alignSelf: 'center', width: 70, height: 70, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.lg },
   sectionDivider: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 15, letterSpacing: 1 },
+  sectionHint: { fontSize: 12, color: '#8E8E93', marginTop: -10, marginBottom: 15, lineHeight: 16 },
+  avatarRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 20 },
   avatarPicker: { alignSelf: 'center', marginBottom: Spacing.lg, position: 'relative' },
   avatarImage: { width: 100, height: 100, borderRadius: 50 },
   avatarPlaceholder: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center' },
@@ -1764,6 +1995,9 @@ const styles = StyleSheet.create({
   qrLogoBadge: { position: 'absolute', left: '50%', top: '50%', zIndex: 2, elevation: 4, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', opacity: 0.96 },
   qrLogoImage: { backgroundColor: '#FFF' },
   qrHint: { marginTop: 10, fontSize: 12, color: '#8E8E93', fontWeight: '600' },
+  emptyQrPlaceholder: { borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  emptyQrTitle: { marginTop: 10, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  emptyQrHint: { marginTop: 4, fontSize: 12, fontWeight: '500', textAlign: 'center' },
   bankView: { alignItems: 'center', width: '100%' },
   bankHeader: { alignItems: 'center', marginBottom: 14, paddingHorizontal: 0 },
   bankBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginBottom: 10 },
@@ -1773,6 +2007,8 @@ const styles = StyleSheet.create({
   bankQrFrame: { justifyContent: 'center', alignItems: 'center' },
   bankQrImage: { width: '100%', height: '100%' },
   qrLoadingOverlay: { position: 'absolute', zIndex: 1, top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 18 },
+  offlineBadge: { position: 'absolute', bottom: 6, alignSelf: 'center', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, opacity: 0.92 },
+  offlineBadgeText: { fontSize: 10, fontWeight: '800' },
   bankQrPlaceholder: { justifyContent: 'center', alignItems: 'center', padding: 18, borderWidth: 1, borderStyle: 'dashed', borderRadius: 18 },
   bankPlaceholderTitle: { marginTop: 12, fontSize: 15, fontWeight: '800', textAlign: 'center' },
   bankInfoPanel: { marginTop: 16, alignItems: 'center', width: '100%' },

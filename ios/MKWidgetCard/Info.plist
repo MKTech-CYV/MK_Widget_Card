@@ -31,9 +31,15 @@
           <string>mkwidgetcard</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.896185084209-i8bargnlvvi2l0q1l7krp9bijpgt7vuf</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>9</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -79,5 +85,14 @@
     <string>Automatic</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>GADApplicationIdentifier</key>
+    <string>ca-app-pub-7281955271433795~7762039163</string>
+    <key>SKAdNetworkItems</key>
+    <array>
+      <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>cstr6suwn9.skadnetwork</string>
+      </dict>
+    </array>
   </dict>
 </plist>

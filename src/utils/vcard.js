@@ -223,7 +223,7 @@ export const parseVCard = (rawValue) => {
   };
 };
 
-export const buildVCard = (data = {}) => {
+export const buildVCard = (data = {}, { minimal = false } = {}) => {
   const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
   const add = (key, value) => {
     const escaped = escapeVCardValue(value);
@@ -249,23 +249,28 @@ export const buildVCard = (data = {}) => {
     .join(';');
   addRaw(`ORG:${org}`, org);
   add('TITLE', data.title);
-  add('URL;TYPE=WORK', cleanUrl(data.website));
-  addRaw(`ADR;TYPE=WORK:;;${escapeVCardValue(data.address)};;;;`, data.address);
 
-  [
-    ['linkedin', data.linkedin],
-    ['facebook', data.facebook],
-    ['zalo', formatInternationalPhone(data.zaloCountryCode || data.countryCode, data.zalo)],
-    ['whatsapp', formatInternationalPhone(data.whatsappCountryCode || data.countryCode, data.whatsapp)],
-    ['telegram', data.telegram],
-  ].forEach(([type, value]) => {
-    const cleaned = cleanUrl(value);
-    addRaw(`X-SOCIALPROFILE;TYPE=${type}:${escapeVCardValue(cleaned)}`, cleaned);
-  });
+  // Minimal mode is used for QR codes: skip low-priority fields so the encoded
+  // payload stays small enough to render a scannable (low-density) QR.
+  if (!minimal) {
+    add('URL;TYPE=WORK', cleanUrl(data.website));
+    addRaw(`ADR;TYPE=WORK:;;${escapeVCardValue(data.address)};;;;`, data.address);
 
-  const avatarUrl = cleanUrl(data.avatarUrl || (isRemoteUrl(data.avatar) ? data.avatar : ''));
-  addRaw(`PHOTO;VALUE=URI:${escapeVCardValue(avatarUrl)}`, avatarUrl);
-  add('NOTE', data.bio);
+    [
+      ['linkedin', data.linkedin],
+      ['facebook', data.facebook],
+      ['zalo', formatInternationalPhone(data.zaloCountryCode || data.countryCode, data.zalo)],
+      ['whatsapp', formatInternationalPhone(data.whatsappCountryCode || data.countryCode, data.whatsapp)],
+      ['telegram', data.telegram],
+    ].forEach(([type, value]) => {
+      const cleaned = cleanUrl(value);
+      addRaw(`X-SOCIALPROFILE;TYPE=${type}:${escapeVCardValue(cleaned)}`, cleaned);
+    });
+
+    const avatarUrl = cleanUrl(data.avatarUrl || (isRemoteUrl(data.avatar) ? data.avatar : ''));
+    addRaw(`PHOTO;VALUE=URI:${escapeVCardValue(avatarUrl)}`, avatarUrl);
+    add('NOTE', data.bio);
+  }
 
   lines.push('END:VCARD');
   return lines.join('\n');

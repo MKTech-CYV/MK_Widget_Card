@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, ExternalLink, X } from 'lucide-react-native';
 import { useTheme } from '../constants/Theme';
 import ScreenScaffold from '../components/ScreenScaffold';
@@ -132,6 +133,8 @@ export default function NotificationsScreen({ navigation, route }) {
 }
 
 const NotificationDetailModal = ({ notification, colors, t, onClose }) => {
+  const insets = useSafeAreaInsets();
+
   if (!notification) return null;
 
   const title = notification.detailTitle || notification.title;
@@ -145,7 +148,7 @@ const NotificationDetailModal = ({ notification, colors, t, onClose }) => {
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={[styles.detailSheet, { backgroundColor: colors.card }]}>
+        <View style={[styles.detailSheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={styles.detailHeader}>
             <Text style={[styles.detailTitle, { color: colors.text }]} numberOfLines={2}>
               {title}
