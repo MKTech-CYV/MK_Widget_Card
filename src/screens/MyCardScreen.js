@@ -72,6 +72,7 @@ import {
   normalizePhoneForCountry
 } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
+import { getShortEcardUrl } from '../services/ShareLinkService';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
@@ -114,6 +115,7 @@ const DEFAULT_ECARD_FORM = {
   whatsappCountryCode: '84',
   telegram: '',
   bio: '',
+  about: '',
   avatar: null,
   avatarUrl: '',
   logoUrl: '',
@@ -127,6 +129,7 @@ const DEFAULT_BANK_FORM = {
 };
 
 const trimText = (value) => `${value || ''}`.trim();
+const ABOUT_MAX_LENGTH = 600;
 
 const getECardPresetAvatarUrl = (preset = {}) => {
   const social = preset.social || {};
@@ -179,6 +182,7 @@ const sanitizeECardForm = (data) => ({
   whatsappCountryCode: normalizeCountryCode(data.whatsappCountryCode || data.countryCode),
   telegram: trimText(data.telegram),
   bio: trimText(data.bio),
+  about: trimText(data.about).slice(0, ABOUT_MAX_LENGTH),
   avatarUrl: trimText(data.avatarUrl),
   countryCode: normalizeCountryCode(data.countryCode)
 });
@@ -850,7 +854,10 @@ export default function MyCardScreen({ route }) {
     }
 
     try {
-      const url = buildECardShareUrl(userData, language);
+      // Prefer the short link (points at the live preset); the long
+      // query-string link is the offline/API-failure fallback.
+      const presetId = StorageService.getAccountPresetSource(userData).ecardPresetId;
+      const url = (await getShortEcardUrl(presetId, language)) || buildECardShareUrl(userData, language);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareFailed'));
@@ -1085,6 +1092,7 @@ export default function MyCardScreen({ route }) {
       })}
       <InputField label={t('myCard.telegram')} value={ecardForm.telegram} onChange={v => setECardForm({ ...ecardForm, telegram: v })} placeholder={t('myCard.telegramPlaceholder')} autoCapitalize="none" colors={colors} />
       <InputField label={t('myCard.bio')} value={ecardForm.bio} onChange={v => setECardForm({ ...ecardForm, bio: v })} placeholder={t('myCard.bioPlaceholder')} colors={colors} multiline />
+      <InputField label={t('myCard.aboutMe')} value={ecardForm.about} onChange={v => setECardForm({ ...ecardForm, about: v })} placeholder={t('myCard.aboutMePlaceholder')} colors={colors} multiline maxLength={ABOUT_MAX_LENGTH} />
 
     </View>
   );
@@ -1396,6 +1404,9 @@ export default function MyCardScreen({ route }) {
                 {!!userData.bio && (
                   <Text style={[styles.bioText, { color: colors.textSecondary }]} numberOfLines={4}>{userData.bio}</Text>
                 )}
+                {!!userData.about && (
+                  <Text style={[styles.bioText, { color: colors.textSecondary }]} numberOfLines={6}>{userData.about}</Text>
+                )}
               </>
             ) : (
               <View style={styles.bankView}>
@@ -1528,7 +1539,8 @@ const InputField = ({
   keyboardType,
   autoCapitalize,
   colors,
-  multiline = false
+  multiline = false,
+  maxLength
 }) => (
   <View style={styles.inputContainer}>
     <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
@@ -1545,6 +1557,7 @@ const InputField = ({
       autoCapitalize={autoCapitalize}
       placeholderTextColor={colors.textSecondary}
       multiline={multiline}
+      maxLength={maxLength}
       textAlignVertical={multiline ? 'top' : 'center'}
     />
   </View>

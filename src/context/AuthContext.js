@@ -17,6 +17,7 @@ import { fetchProfile } from '../services/ProfileService';
 import { syncAccountDataOnLogin } from '../services/AccountSyncService';
 import { deleteCurrentAccount } from '../services/AccountDeletionService';
 import { getAppleAuthenticationModule } from '../services/NativeAuthModules';
+import { noteExplicitSignIn, reportDeviceSession } from '../services/DeviceService';
 import {
   bankQrPresetToLocalData,
   ecardPresetToLocalData,
@@ -44,6 +45,7 @@ const ECARD_COMPARE_KEYS = [
   'whatsappCountryCode',
   'telegram',
   'bio',
+  'about',
   'avatar',
   'avatarUrl',
   'logoUrl',
@@ -243,6 +245,9 @@ export const AuthProvider = ({ children }) => {
 
       if (appUser) {
         await refreshProfile(appUser).catch(() => {});
+        // Restored session (or the tail of an explicit sign-in, which
+        // DeviceService skips): fire and forget.
+        reportDeviceSession('seen');
       } else {
         setAccountProfile(null);
       }
@@ -258,7 +263,9 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Firebase is not configured.');
     }
 
+    noteExplicitSignIn();
     await signInWithEmailAndPassword(auth, `${email || ''}`.trim(), password);
+    reportDeviceSession('login');
   };
 
   // Returns null if the user backs out of the native picker (matches the old
@@ -319,7 +326,9 @@ export const AuthProvider = ({ children }) => {
     const idToken = await getGoogleIdToken();
     if (!idToken) return null;
 
+    noteExplicitSignIn();
     await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+    reportDeviceSession('login');
     return null;
   };
 
@@ -329,7 +338,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     const credential = await getAppleCredential();
+    noteExplicitSignIn();
     await signInWithCredential(auth, credential);
+    reportDeviceSession('login');
   };
 
   // Firebase requires a *recent* sign-in before it will let a user delete

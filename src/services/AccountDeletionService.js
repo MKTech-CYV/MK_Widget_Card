@@ -2,6 +2,7 @@ import { ref, listAll, deleteObject } from 'firebase/storage';
 import { collection, doc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { deleteUser } from 'firebase/auth';
 import { auth, db, storage, isFirebaseConfigured } from './firebaseClient';
+import { purgeServerAccountData } from './DeviceService';
 
 const STORAGE_PREFIXES_TO_CLEAN = ['avatars', 'ecards'];
 
@@ -43,5 +44,8 @@ export const deleteCurrentAccount = async () => {
   }
 
   await cleanAccountOwnedData(user.uid);
+  // Device registry, login history and short links live on the website
+  // backend and need the still-valid ID token, so purge before deleting.
+  await purgeServerAccountData();
   await deleteUser(user);
 };
