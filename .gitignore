@@ -42,3 +42,6 @@ yarn-error.*
 # generated native folders (uncomment to exclude)
 # /ios
 # /android
+
+# local Claude Code settings
+/.claude/
