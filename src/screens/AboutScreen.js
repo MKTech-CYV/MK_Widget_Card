@@ -40,7 +40,6 @@ export default function AboutScreen({ navigation }) {
   const Smartphone = Icons.Smartphone || Icons.Info || View;
   const Zap = Icons.Zap || Icons.Info || View;
   const Shield = Icons.Shield || Icons.Info || View;
-  const Cpu = Icons.Cpu || Icons.Info || View;
   const Phone = Icons.Phone || Icons.Info || View;
   const Globe = Icons.Globe || Icons.Info || View;
 
@@ -58,10 +57,6 @@ export default function AboutScreen({ navigation }) {
         <View style={styles.headerText}>
           <Text style={[styles.appName, { color: colors.text }]}>{t('about.appName')}</Text>
           <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{t('about.appVersion')}</Text>
-        </View>
-        <View style={styles.aiBadge}>
-          <Cpu color={colors.success} size={12} />
-          <Text style={[styles.aiBadgeText, { color: colors.success }]}>{t('about.aiBadge')}</Text>
         </View>
       </View>
 
@@ -144,8 +139,6 @@ const styles = StyleSheet.create({
   headerText: { marginLeft: 15, flex: 1 },
   appName: { fontSize: 24, fontWeight: '800' },
   appVersion: { fontSize: 13, fontWeight: '600' },
-  aiBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(52, 199, 89, 0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  aiBadgeText: { fontSize: 11, fontWeight: '800', marginLeft: 4 },
   introSection: { marginBottom: 20 },
   tagline: { fontSize: 17, fontWeight: '700', marginBottom: 8 },
   description: { fontSize: 14, lineHeight: 22 },

@@ -91,8 +91,7 @@ const translations = {
       donateDesc: 'Mời tôi một ly cà phê nếu bạn yêu thích dự án này!',
       bankName: 'MB Bank',
       accountName: 'TRAN MINH KHOI',
-      aiBadge: '100% AI',
-      appVersion: 'v3.0.0 • 2026',
+      appVersion: 'v3.1.0 • 2026',
     },
     myCard: {
       title: 'eCard của tôi',
@@ -464,8 +463,7 @@ const translations = {
       donateDesc: 'Buy me a coffee if you enjoy this project!',
       bankName: 'MB Bank',
       accountName: 'TRAN MINH KHOI',
-      aiBadge: '100% AI',
-      appVersion: 'v3.0.0 • 2026',
+      appVersion: 'v3.1.0 • 2026',
     },
     myCard: {
       title: 'My eCard',
