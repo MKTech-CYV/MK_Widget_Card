@@ -15,10 +15,21 @@
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "ios": {
+        "image": "latest"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./credentials/play-console-service-account.json",
+        "track": "production"
+      },
+      "ios": {
+        "ascAppId": "6768935113"
+      }
+    }
   }
 }

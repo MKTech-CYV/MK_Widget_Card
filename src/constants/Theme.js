@@ -53,8 +53,8 @@ export const ThemeProvider = ({ children }) => {
         if (savedTheme) {
           setThemeMode(savedTheme);
         }
-      } catch (e) {
-        console.log('Error loading theme', e);
+      } catch {
+        // Keep the system theme if stored preferences cannot be read.
       }
     };
     loadTheme();

@@ -33,9 +33,15 @@ yarn-error.*
 # local env files
 .env*.local
 
+# service account keys / credentials
+/credentials/
+
 # typescript
 *.tsbuildinfo
 
 # generated native folders (uncomment to exclude)
 # /ios
 # /android
+
+# local Claude Code settings
+/.claude/

@@ -11,7 +11,7 @@ import { buildExpoContact, contactPayloadFromResult } from '../utils/contactSave
 
 const { ContactSaver } = NativeModules;
 
-const requestAndroidContactsPermission = async () => {
+const requestNativeContactsPermission = async () => {
   if (Platform.OS !== 'android') return true;
 
   const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_CONTACTS);
@@ -105,7 +105,7 @@ export default function ScanScreen() {
 
     try {
       if (ContactSaver?.saveContact) {
-        const hasPermission = await requestAndroidContactsPermission();
+        const hasPermission = await requestNativeContactsPermission();
         if (!hasPermission) {
           Alert.alert(t('scan.contactsPermissionTitle'), t('scan.contactsPermissionDesc'));
           return;

@@ -13,6 +13,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -31,7 +32,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
     companion object {
         private val widgetExecutor = Executors.newSingleThreadExecutor()
         private const val SMALL_QR_SIZE = 640
-        private const val MEDIUM_QR_SIZE = 560
+        private const val MEDIUM_QR_SIZE = 640
 
         private val bankAliases = mapOf(
             "MB BANK" to "MB",
@@ -76,9 +77,11 @@ open class MKWidgetProvider : AppWidgetProvider() {
         val telegram: String,
         val bio: String,
         val avatarUrl: String,
+        val logoUrl: String,
         val countryCode: String,
         val bankCode: String,
-        val bankAccount: String
+        val bankAccount: String,
+        val bankAccountHolderName: String
     )
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -139,7 +142,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 if (hasContactInfo) {
                     val contactUser = user!!
                     val vCard = buildVCard(contactUser)
-                    generateQRCode(context, vCard, qrSize)?.let { views.setImageViewBitmap(R.id.widget_qr_image, it) }
+                    generateQRCode(context, vCard, qrSize, contactUser.logoUrl)?.let { views.setImageViewBitmap(R.id.widget_qr_image, it) }
                     views.setContentDescription(R.id.widget_qr_image, "QR danh bạ của ${contactUser.fullName}")
                 } else {
                     views.setImageViewBitmap(R.id.widget_qr_image, generateMessageBitmap(qrSize, "Vui lòng nhập thông tin eCard"))
@@ -151,6 +154,15 @@ open class MKWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.widget_title, if (hasContactInfo) user?.fullName else "Chưa có eCard")
                     views.setTextViewText(R.id.widget_subtitle, if (hasContactInfo) user?.title else "Mở app để cập nhật")
                     views.setTextViewText(R.id.widget_extra, if (hasContactInfo) user?.company else "")
+
+                    val rawPhone = if (hasContactInfo) user?.phone.orEmpty() else ""
+                    val phoneDisplay = if (rawPhone.isNotBlank()) "+${user?.countryCode.orEmpty()}$rawPhone" else ""
+                    if (phoneDisplay.isNotBlank()) {
+                        views.setTextViewText(R.id.widget_phone, phoneDisplay)
+                        views.setViewVisibility(R.id.widget_phone, View.VISIBLE)
+                    } else {
+                        views.setViewVisibility(R.id.widget_phone, View.GONE)
+                    }
                 }
             } else {
                 val bankUser = user
@@ -171,8 +183,13 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 )
 
                 if (isMedium) {
+                    val bankTitle = if (hasBankInfo) {
+                        bankUser!!.bankAccountHolderName.ifBlank { "Chưa có tên tài khoản" }
+                    } else {
+                        "Chưa có tài khoản"
+                    }
                     views.setTextViewText(R.id.widget_badge, "VIETQR")
-                    views.setTextViewText(R.id.widget_title, if (hasBankInfo) bankUser?.fullName else "Chưa có tài khoản")
+                    views.setTextViewText(R.id.widget_title, bankTitle)
                     views.setTextViewText(R.id.widget_subtitle, if (hasBankInfo) bankName else "Mở app để cập nhật")
                     views.setTextViewText(R.id.widget_extra, if (hasBankInfo) bankUser?.bankAccount else "")
                 }
@@ -208,9 +225,11 @@ open class MKWidgetProvider : AppWidgetProvider() {
                 telegram = user.optCleanString("telegram"),
                 bio = user.optCleanString("bio"),
                 avatarUrl = user.optCleanString("avatarUrl"),
+                logoUrl = user.optCleanString("logoUrl"),
                 countryCode = normalizeCountryCode(user.optString("countryCode", "84")),
                 bankCode = normalizeBankCode(user.optCleanString("bankName")),
-                bankAccount = sanitizeBankAccount(user.optString("bankAccount", ""))
+                bankAccount = sanitizeBankAccount(user.optString("bankAccount", "")),
+                bankAccountHolderName = user.optCleanString("bankAccountHolderName")
             )
         } catch (e: Exception) {
             Log.e("MKWidget", "Invalid user data: ${e.message}")
@@ -249,28 +268,9 @@ open class MKWidgetProvider : AppWidgetProvider() {
         }
 
         add("TITLE", user.title)
-        add("URL;TYPE=WORK", user.website)
-
-        val address = escapeVCardValue(user.address)
-        if (address.isNotBlank()) {
-            lines.add("ADR;TYPE=WORK:;;$address;;;;")
-        }
-
-        listOf(
-            "linkedin" to user.linkedin,
-            "facebook" to user.facebook,
-            "zalo" to formatSocialPhone(user.zalo, user.zaloCountryCode),
-            "whatsapp" to formatSocialPhone(user.whatsapp, user.whatsappCountryCode),
-            "telegram" to user.telegram
-        ).forEach { (type, value) ->
-            val escaped = escapeVCardValue(value)
-            if (escaped.isNotBlank()) {
-                lines.add("X-SOCIALPROFILE;TYPE=$type:$escaped")
-            }
-        }
-
-        add("PHOTO;VALUE=URI", user.avatarUrl)
-        add("NOTE", user.bio)
+        // Widget QR stays minimal on purpose (name/phone/email/company/title
+        // only) so it scans reliably at a glance. Website, address, socials,
+        // avatar photo and bio are only sent through the "Share" link.
         lines.add("END:VCARD")
         return lines.joinToString("\n")
     }
@@ -290,18 +290,6 @@ open class MKWidgetProvider : AppWidgetProvider() {
         }
 
         return parts.last() to parts.dropLast(1).joinToString(" ")
-    }
-
-    private fun formatSocialPhone(phone: String, countryCode: String): String {
-        val localPhone = phone.filter { it.isDigit() }.trimStart('0')
-        if (localPhone.isBlank()) return ""
-
-        val countryDigits = countryCode.filter { it.isDigit() }.ifBlank { "84" }
-        if (localPhone.startsWith(countryDigits) && localPhone.length > countryDigits.length) {
-            return "+$localPhone"
-        }
-
-        return "+$countryDigits$localPhone"
     }
 
     private fun normalizeCountryCode(value: String): String {
@@ -328,7 +316,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
     }
 
     private fun buildVietQrUrl(user: WidgetUserData): String {
-        val accountName = URLEncoder.encode(user.fullName, "UTF-8").replace("+", "%20")
+        val accountName = URLEncoder.encode(user.bankAccountHolderName, "UTF-8").replace("+", "%20")
         return "https://img.vietqr.io/image/${user.bankCode}-${user.bankAccount}-qr_only.png?accountName=$accountName"
     }
 
@@ -376,7 +364,7 @@ open class MKWidgetProvider : AppWidgetProvider() {
         return output
     }
 
-    private fun generateQRCode(context: Context, content: String, size: Int): Bitmap? {
+    private fun generateQRCode(context: Context, content: String, size: Int, logoUrl: String? = null): Bitmap? {
         return try {
             val writer = QRCodeWriter()
             val hints = mapOf(
@@ -392,13 +380,13 @@ open class MKWidgetProvider : AppWidgetProvider() {
                     bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
                 }
             }
-            drawLogoBadge(context, bitmap)
+            drawLogoBadge(context, bitmap, logoUrl)
         } catch (e: Exception) {
             null
         }
     }
 
-    private fun drawLogoBadge(context: Context, source: Bitmap): Bitmap {
+    private fun drawLogoBadge(context: Context, source: Bitmap, logoUrl: String? = null): Bitmap {
         val output = source.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(output)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -413,7 +401,10 @@ open class MKWidgetProvider : AppWidgetProvider() {
         paint.color = Color.WHITE
         canvas.drawRoundRect(badgeRect, badgeSize * 0.22f, badgeSize * 0.22f, paint)
 
-        val logo = BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)
+        // Premium users may set a custom logo; it's only ever populated by
+        // the app for Premium accounts, so no extra entitlement check here.
+        val logo = (if (!logoUrl.isNullOrBlank()) downloadBitmap(logoUrl, logoSize.toInt().coerceAtLeast(1)) else null)
+            ?: BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_foreground)
             ?: BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
 
         if (logo != null) {

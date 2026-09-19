@@ -1,14 +1,10 @@
 # MK Widget Card 📇 - Code Your Vision
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![100% AI Developed](https://img.shields.io/badge/Developed%20with-100%25%20AI-green.svg)](https://tranminhkhoi.dev)
 [![Platform: iOS](https://img.shields.io/badge/Platform-iOS-blue.svg)](https://apple.com/ios)
 [![Platform: Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://android.com)
 
 **MK Widget Card** là một giải pháp danh thiếp kỹ thuật số đột phá dành cho hệ sinh thái iOS và Android. Dự án cho phép người dùng cá nhân hóa trải nghiệm kết nối thông qua các Widget thông minh trên màn hình chính và màn hình khóa, tích hợp cả thông tin liên lạc (vCard) và thanh toán nhanh (VietQR).
-
-> [!IMPORTANT]
-> **100% AI GENERATED:** Toàn bộ dự án này, từ kiến trúc hệ thống, giao diện React Native, mã nguồn Swift Native cho iOS Widget, Kotlin cho Android Widget, cho đến tài liệu này, đều được phát triển hoàn toàn bởi trí tuệ nhân tạo (AI). Đây là minh chứng cho sức mạnh của AI trong việc xây dựng sản phẩm phần mềm thực tế hoàn chỉnh.
 
 ---
 
@@ -40,7 +36,6 @@ Tận dụng tối đa sức mạnh của iOS WidgetKit và Android App Widgets 
   - **Android:** Kotlin (AppWidgetProvider, ZXing)
 - **Dữ liệu dùng chung:** App Group Container (iOS) & SharedPreferences (Android)
 - **Thiết kế UI:** Modern iOS/Android Design Language (hỗ trợ 100% Dark Mode & Light Mode)
-- **AI Tooling:** Gemini & Claude via Gemini CLI.
 
 ---
 
