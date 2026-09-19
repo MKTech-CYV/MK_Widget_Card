@@ -25,6 +25,7 @@ const ECARD_DATA_KEYS = [
   'whatsappCountryCode',
   'telegram',
   'bio',
+  'about',
   'avatar',
   'avatarUrl',
   'logoUrl',
@@ -204,6 +205,25 @@ export const StorageService = {
 
   getPushToken: async () => {
     return await DefaultPreference.get('expoPushToken');
+  },
+
+  // Random per-install id used to tell a user's devices apart in the admin
+  // device registry. Reset on reinstall (there is no stable hardware id).
+  getInstallId: async () => {
+    return await DefaultPreference.get('installId');
+  },
+
+  setInstallId: async (installId) => {
+    if (!installId) return;
+    await DefaultPreference.set('installId', `${installId}`);
+  },
+
+  getDeviceReportedAt: async () => {
+    return await DefaultPreference.get('deviceReportedAt');
+  },
+
+  setDeviceReportedAt: async (timestamp) => {
+    await DefaultPreference.set('deviceReportedAt', `${timestamp}`);
   },
 
   getNotifications: async () => {

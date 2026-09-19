@@ -30,6 +30,7 @@ import { deleteStorageFile, deleteStorageFileFromUrlIfChanged, uploadImageToBuck
 import { buildBankQrCacheKey, fetchBankList } from '../services/VietQrService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
+import { getShortEcardUrl } from '../services/ShareLinkService';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -94,6 +95,7 @@ const ecardPresetToEditForm = (item = {}) => {
     whatsappCountryCode: social.whatsappCountryCode || social.whatsapp_country_code || '84',
     telegram: social.telegram || '',
     bio: social.bio || '',
+    about: item.about || '',
     countryCode: item.phone_country_code || social.countryCode || social.country_code || '84',
     avatar_preview_uri: '',
     avatar_asset: null,
@@ -120,6 +122,7 @@ const ecardEditFormToPayload = (form = {}) => ({
   website: compactText(form.website),
   address: compactText(form.address),
   avatar_url: compactText(form.avatar_url),
+  about: compactText(form.about).slice(0, 600),
   social: {
     linkedin: compactText(form.linkedin),
     facebook: compactText(form.facebook),
@@ -247,7 +250,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
 
   const handleShareECard = async (item) => {
     try {
-      const url = buildECardShareUrl(item, language);
+      const url = (await getShortEcardUrl(item.id, language)) || buildECardShareUrl(item, language);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareFailed'));
@@ -778,6 +781,7 @@ const PresetEditModal = ({ visible, isBank, isNew, form, saving, userId, colors,
       ['whatsapp', t('myCard.whatsapp'), 'phone-pad', false, 'whatsapp'],
       ['telegram', t('myCard.telegram')],
       ['bio', t('myCard.bio'), 'default', true],
+      ['about', t('myCard.aboutMe'), 'default', true],
     ];
 
   return (
@@ -840,6 +844,7 @@ const PresetEditModal = ({ visible, isBank, isNew, form, saving, userId, colors,
                     keyboardType={keyboardType || 'default'}
                     autoCapitalize="none"
                     multiline={Boolean(multiline)}
+                    maxLength={key === 'about' ? 600 : undefined}
                     textAlignVertical={multiline ? 'top' : 'center'}
                   />
                 </View>

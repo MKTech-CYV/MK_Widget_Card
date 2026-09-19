@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './firebaseClient';
 import { deleteStorageFileFromUrl, deleteStorageFileFromUrlIfChanged } from './FirebaseStorageService';
+import { revokeShortEcardLink } from './ShareLinkService';
 
 const requireUid = () => {
   if (!isFirebaseConfigured) {
@@ -95,6 +96,7 @@ export const ecardToPresetPayload = ({ userId, data, label }) => ({
   address: compactText(data.address),
   avatar_url: compactText(data.avatarUrl) || compactText(data.avatar),
   logo_url: compactText(data.logoUrl),
+  about: compactText(data.about),
   social: {
     linkedin: compactText(data.linkedin),
     facebook: compactText(data.facebook),
@@ -152,6 +154,7 @@ export const ecardPresetToLocalData = (preset = {}) => {
     whatsappCountryCode: social.whatsappCountryCode || social.whatsapp_country_code || '84',
     telegram: social.telegram || '',
     bio: social.bio || '',
+    about: preset.about || '',
     countryCode: preset.phone_country_code || social.countryCode || social.country_code || '84',
     avatar,
     avatarUrl: social.avatarUrl || preset.avatar_url || '',
@@ -348,6 +351,11 @@ export const deleteECardPreset = async (presetId) => {
 
   await deleteECardAvatarFromStorage(getECardAvatarUrl(preset));
   await deleteECardAvatarFromStorage(getECardLogoUrl(preset));
+
+  // The short link is dead once the preset is gone; tidy its server record.
+  if (preset?.share_code) {
+    revokeShortEcardLink(preset.share_code);
+  }
 
   return wasSelected;
 };

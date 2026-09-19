@@ -30,6 +30,7 @@ export const buildECardShareUrl = (data = {}, language = 'vi') => {
   appendParam(params, 'address', data.address);
   appendParam(params, 'avatar_url', data.avatar_url || data.avatarUrl || social.avatarUrl || social.avatar);
   appendParam(params, 'bio', data.bio || social.bio);
+  appendParam(params, 'about', data.about);
   appendParam(params, 'facebook', data.facebook || social.facebook);
   appendParam(params, 'instagram', data.instagram || social.instagram);
   appendParam(params, 'linkedin', data.linkedin || social.linkedin);
