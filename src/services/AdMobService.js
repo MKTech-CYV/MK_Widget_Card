@@ -20,13 +20,11 @@ export const APP_OPEN_AD_UNIT_ID = __DEV__
 
 // Chính sách AdMob: Quảng cáo App Open hết hạn sau 4 giờ
 const AD_EXPIRATION_HOURS = 4;
-// Giới hạn tần suất hiển thị (Cooldown):
-// Khớp với cấu hình trên AdMob Console (tối đa 2 cái / 1 tiếng):
-// - Trong môi trường DEV: 0 phút (để test liên tục)
-// - Trong môi trường PRODUCTION: 30 phút giữa 2 lần hiển thị (chia đều 2 lần / 1 tiếng)
-const COOLDOWN_MINUTES = __DEV__ ? 0 : 30;
-// Giới hạn tối đa số lần hiển thị trong 1 ngày cho mỗi người dùng (UX Protection)
-const MAX_DAILY_IMPRESSIONS = __DEV__ ? Infinity : 6;
+// Tần suất hiển thị do AdMob Console quyết định (frequency capping trên ad unit);
+// app không tự giới hạn. Khi AdMob chặn hoặc không có quảng cáo (no fill), app
+// tải lại với thời gian giãn dần để không gửi request dồn dập.
+const RETRY_BASE_DELAY_MS = 30 * 1000;
+const RETRY_MAX_DELAY_MS = 10 * 60 * 1000;
 
 class AdMobManager {
   constructor() {
@@ -36,9 +34,8 @@ class AdMobManager {
     this.isLoaded = false;
     this.isShowing = false;
     this.loadTime = 0;
-    this.lastShownTime = 0;
-    this.dailyCount = 0;
-    this.dailyCountDate = new Date().toISOString().slice(0, 10);
+    this.retryCount = 0;
+    this.retryTimer = null;
     this.appStateSubscription = null;
     this.currentAppState = AppState.currentState;
     this.unsubscribeLoaded = null;
@@ -78,15 +75,6 @@ class AdMobManager {
   }
 
   /**
-   * Kiểm tra thời gian nghỉ giữa các lần hiển thị (Cooldown)
-   */
-  isCooldownPassed() {
-    const now = Date.now();
-    const minutesSinceLastShown = (now - this.lastShownTime) / (1000 * 60);
-    return minutesSinceLastShown >= COOLDOWN_MINUTES;
-  }
-
-  /**
    * Tải trước (preload) quảng cáo App Open
    */
   loadAppOpenAd() {
@@ -107,13 +95,13 @@ class AdMobManager {
       this.isLoading = false;
       this.isLoaded = true;
       this.loadTime = Date.now();
+      this.retryCount = 0;
       console.log('[AdMob] App Open Ad loaded successfully.');
     });
 
     this.unsubscribeClosed = this.appOpenAd.addAdEventListener(AdEventType.CLOSED, () => {
       this.isShowing = false;
       this.isLoaded = false;
-      this.lastShownTime = Date.now();
       console.log('[AdMob] App Open Ad closed.');
       // Tự động tải trước quảng cáo tiếp theo
       this.loadAppOpenAd();
@@ -123,10 +111,13 @@ class AdMobManager {
       this.isLoading = false;
       this.isLoaded = false;
       console.warn('[AdMob] App Open Ad failed to load:', error);
-      // Thử tải lại sau 30 giây nếu lỗi
-      setTimeout(() => {
+      // Thử tải lại với thời gian giãn dần (30s, 60s, 2p ... tối đa 10p)
+      const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** this.retryCount, RETRY_MAX_DELAY_MS);
+      this.retryCount += 1;
+      clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => {
         this.loadAppOpenAd();
-      }, 30000);
+      }, delay);
     });
 
     try {
@@ -138,29 +129,11 @@ class AdMobManager {
   }
 
   /**
-   * Kiểm tra giới hạn số lần hiển thị tối đa trong 1 ngày
-   */
-  isDailyCapReached() {
-    const today = new Date().toISOString().slice(0, 10);
-    if (this.dailyCountDate !== today) {
-      this.dailyCountDate = today;
-      this.dailyCount = 0;
-      return false;
-    }
-    return this.dailyCount >= MAX_DAILY_IMPRESSIONS;
-  }
-
-  /**
    * Hiển thị quảng cáo App Open nếu thỏa mãn điều kiện
    */
   async showAppOpenAdIfAvailable() {
     if (this.isShowing) {
       console.log('[AdMob] An ad is already showing.');
-      return false;
-    }
-
-    if (this.isDailyCapReached()) {
-      console.log(`[AdMob] Daily cap reached (${MAX_DAILY_IMPRESSIONS} ads/day). Skipping to protect UX.`);
       return false;
     }
 
@@ -170,14 +143,8 @@ class AdMobManager {
       return false;
     }
 
-    if (this.lastShownTime > 0 && !this.isCooldownPassed()) {
-      console.log('[AdMob] Cooldown period active, skipping App Open Ad to protect UX.');
-      return false;
-    }
-
     try {
       this.isShowing = true;
-      this.dailyCount++;
       await this.appOpenAd.show();
       return true;
     } catch (error) {
