@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './firebaseClient';
 import { deleteStorageFileFromUrl, deleteStorageFileFromUrlIfChanged } from './FirebaseStorageService';
-import { revokeShortEcardLink } from './ShareLinkService';
+import { getShortEcardUrl, revokeShortEcardLink } from './ShareLinkService';
 
 const requireUid = () => {
   if (!isFirebaseConfigured) {
@@ -20,6 +20,18 @@ const requireUid = () => {
 };
 
 const compactText = (value) => `${value || ''}`.trim();
+
+// Every eCard preset gets its short link (share_links/{code}) when it is
+// created; presets made by older app versions get theirs the first time they
+// are loaded or saved. Fire-and-forget: sharing retries it if this fails.
+const shortLinkRequested = new Set();
+const ensureShortLinkInBackground = (presetId) => {
+  if (!presetId || shortLinkRequested.has(presetId)) return;
+  shortLinkRequested.add(presetId);
+  getShortEcardUrl(presetId)
+    .then((url) => { if (!url) shortLinkRequested.delete(presetId); })
+    .catch(() => shortLinkRequested.delete(presetId));
+};
 
 // Matches the real cap from the old Postgres RLS policy (pg_policies:
 // "Users can insert own ecards"/"...bank qrs", `count(*) < 10`). Enforced
@@ -204,7 +216,9 @@ export const fetchECardPresets = async () => {
     orderBy('created_at', 'desc')
   );
   const snap = await getDocs(presetsQuery);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const presets = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  presets.filter((preset) => !preset.share_code).forEach((preset) => ensureShortLinkInBackground(preset.id));
+  return presets;
 };
 
 export const fetchBankQrPresets = async () => {
@@ -240,6 +254,7 @@ export const saveECardPreset = async ({ userId, data, label }) => {
   });
 
   await setSelectedECardPreset(userId, newDocRef.id);
+  ensureShortLinkInBackground(newDocRef.id);
   return fetchECardPresetById(newDocRef.id);
 };
 
@@ -279,6 +294,7 @@ export const updateECardPreset = async (presetId, payload, previousPreset) => {
   });
 
   const nextPreset = await fetchECardPresetById(presetId);
+  if (!nextPreset?.share_code) ensureShortLinkInBackground(presetId);
   await cleanupReplacedECardAvatar(previous, nextPreset || payload);
 
   return nextPreset;
