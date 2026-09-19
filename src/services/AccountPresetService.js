@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from './firebaseClient';
 import { deleteStorageFileFromUrl, deleteStorageFileFromUrlIfChanged } from './FirebaseStorageService';
-import { getShortEcardUrl, revokeShortEcardLink } from './ShareLinkService';
+import { forgetShareCode, getShortEcardUrl, rememberShareCode, revokeShortEcardLink } from './ShareLinkService';
 
 const requireUid = () => {
   if (!isFirebaseConfigured) {
@@ -182,7 +182,9 @@ export const bankQrPresetToLocalData = (preset = {}) => ({
 
 const fetchECardPresetById = async (presetId) => {
   const snap = await getDoc(doc(db, 'user_ecards', presetId));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (!snap.exists()) return null;
+  rememberShareCode(snap.id, snap.data().share_code);
+  return { id: snap.id, ...snap.data() };
 };
 
 const fetchBankQrPresetById = async (presetId) => {
@@ -217,6 +219,7 @@ export const fetchECardPresets = async () => {
   );
   const snap = await getDocs(presetsQuery);
   const presets = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  presets.forEach((preset) => rememberShareCode(preset.id, preset.share_code));
   presets.filter((preset) => !preset.share_code).forEach((preset) => ensureShortLinkInBackground(preset.id));
   return presets;
 };
@@ -369,6 +372,7 @@ export const deleteECardPreset = async (presetId) => {
   await deleteECardAvatarFromStorage(getECardLogoUrl(preset));
 
   // The short link is dead once the preset is gone; tidy its server record.
+  forgetShareCode(presetId);
   if (preset?.share_code) {
     revokeShortEcardLink(preset.share_code);
   }

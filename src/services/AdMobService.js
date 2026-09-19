@@ -1,4 +1,4 @@
-import mobileAds, { AppOpenAd, TestIds, AdEventType } from 'react-native-google-mobile-ads';
+import mobileAds, { AppOpenAd, RewardedAd, RewardedAdEventType, TestIds, AdEventType } from 'react-native-google-mobile-ads';
 import { AppState, Platform } from 'react-native';
 
 // Google AdMob App IDs (Đọc tập trung từ file môi trường .env với fallback an toàn)
@@ -15,6 +15,23 @@ export const APP_OPEN_AD_UNIT_ID = __DEV__
   : Platform.select({
       ios: process.env.EXPO_PUBLIC_ADMOB_IOS_APP_OPEN_AD_UNIT_ID || 'ca-app-pub-7281955271433795/8024043756',
       android: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_OPEN_AD_UNIT_ID || 'ca-app-pub-7281955271433795/6341453110',
+      default: '',
+    });
+
+// Banner hiển thị trên mọi màn hình (trừ màn quét QR) và Rewarded (đổi logo / đổi mẫu / lưu).
+export const BANNER_AD_UNIT_ID = __DEV__
+  ? TestIds.ADAPTIVE_BANNER
+  : Platform.select({
+      ios: process.env.EXPO_PUBLIC_ADMOB_IOS_BANNER_AD_UNIT_ID || 'ca-app-pub-7281955271433795/2304581707',
+      android: process.env.EXPO_PUBLIC_ADMOB_ANDROID_BANNER_AD_UNIT_ID || 'ca-app-pub-7281955271433795/7873348019',
+      default: '',
+    });
+
+export const REWARDED_AD_UNIT_ID = __DEV__
+  ? TestIds.REWARDED
+  : Platform.select({
+      ios: process.env.EXPO_PUBLIC_ADMOB_IOS_REWARDED_AD_UNIT_ID || 'ca-app-pub-7281955271433795/8250033793',
+      android: process.env.EXPO_PUBLIC_ADMOB_ANDROID_REWARDED_AD_UNIT_ID || 'ca-app-pub-7281955271433795/7282321078',
       default: '',
     });
 
@@ -36,6 +53,14 @@ class AdMobManager {
     this.loadTime = 0;
     this.retryCount = 0;
     this.retryTimer = null;
+    this.rewardedAd = null;
+    this.isRewardedLoading = false;
+    this.isRewardedLoaded = false;
+    this.isRewardedShowing = false;
+    this.rewardedRetryCount = 0;
+    this.rewardedRetryTimer = null;
+    this.rewardedListeners = [];
+    this.suppressAppOpenUntil = 0;
     this.appStateSubscription = null;
     this.currentAppState = AppState.currentState;
     this.unsubscribeLoaded = null;
@@ -54,8 +79,9 @@ class AdMobManager {
       this.isInitialized = true;
       console.log('[AdMob] Google Mobile Ads SDK initialized successfully.');
 
-      // Bắt đầu tải trước quảng cáo App Open
+      // Bắt đầu tải trước quảng cáo App Open và Rewarded
       this.loadAppOpenAd();
+      this.loadRewardedAd();
 
       // Lắng nghe trạng thái ứng dụng (foreground / background)
       this.setupAppStateListener();
@@ -132,8 +158,13 @@ class AdMobManager {
    * Hiển thị quảng cáo App Open nếu thỏa mãn điều kiện
    */
   async showAppOpenAdIfAvailable() {
-    if (this.isShowing) {
+    if (this.isShowing || this.isRewardedShowing) {
       console.log('[AdMob] An ad is already showing.');
+      return false;
+    }
+
+    // Khi vừa đóng quảng cáo Rewarded, app quay lại foreground: không chèn thêm App Open ngay.
+    if (Date.now() < this.suppressAppOpenUntil) {
       return false;
     }
 
@@ -153,6 +184,93 @@ class AdMobManager {
       this.loadAppOpenAd();
       return false;
     }
+  }
+
+  /**
+   * Rewarded: tải trước quảng cáo. Tần suất do AdMob Console điều khiển; khi bị giới hạn
+   * hoặc không có quảng cáo (no fill) thì thử lại giãn dần và người dùng không bị chặn.
+   */
+  loadRewardedAd() {
+    if (!REWARDED_AD_UNIT_ID || this.isRewardedLoading || this.isRewardedShowing) return;
+
+    this.cleanRewardedListeners();
+    this.isRewardedLoading = true;
+    this.isRewardedLoaded = false;
+
+    const ad = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID, {
+      requestNonPersonalizedAdsOnly: false,
+    });
+    this.rewardedAd = ad;
+
+    this.rewardedListeners = [
+      ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+        this.isRewardedLoading = false;
+        this.isRewardedLoaded = true;
+        this.rewardedRetryCount = 0;
+      }),
+      ad.addAdEventListener(AdEventType.ERROR, (error) => {
+        this.isRewardedLoading = false;
+        this.isRewardedLoaded = false;
+        console.warn('[AdMob] Rewarded Ad failed to load:', error);
+        const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** this.rewardedRetryCount, RETRY_MAX_DELAY_MS);
+        this.rewardedRetryCount += 1;
+        clearTimeout(this.rewardedRetryTimer);
+        this.rewardedRetryTimer = setTimeout(() => this.loadRewardedAd(), delay);
+      }),
+    ];
+
+    try {
+      ad.load();
+    } catch (err) {
+      this.isRewardedLoading = false;
+      console.warn('[AdMob] Exception calling rewarded load():', err);
+    }
+  }
+
+  cleanRewardedListeners() {
+    this.rewardedListeners.forEach((unsubscribe) => unsubscribe?.());
+    this.rewardedListeners = [];
+  }
+
+  isRewardedReady() {
+    return Boolean(REWARDED_AD_UNIT_ID) && this.isRewardedLoaded && Boolean(this.rewardedAd) && !this.isRewardedShowing;
+  }
+
+  /**
+   * Hiển thị Rewarded. Resolve khi quảng cáo đóng: true nếu người dùng đã nhận thưởng.
+   * Không bao giờ reject để luồng của người dùng không bị chặn.
+   */
+  showRewardedAd() {
+    if (!this.isRewardedReady()) return Promise.resolve(false);
+
+    const ad = this.rewardedAd;
+    this.isRewardedShowing = true;
+    this.isRewardedLoaded = false;
+
+    return new Promise((resolve) => {
+      let earned = false;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+        this.isRewardedShowing = false;
+        this.suppressAppOpenUntil = Date.now() + 3000;
+        this.loadRewardedAd();
+        resolve(earned);
+      };
+
+      const unsubscribers = [
+        ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => { earned = true; }),
+        ad.addAdEventListener(AdEventType.CLOSED, finish),
+        ad.addAdEventListener(AdEventType.ERROR, finish),
+      ];
+
+      ad.show().catch((error) => {
+        console.warn('[AdMob] Error showing Rewarded Ad:', error);
+        finish();
+      });
+    });
   }
 
   /**
@@ -192,6 +310,9 @@ class AdMobManager {
 
   destroy() {
     this.cleanListeners();
+    this.cleanRewardedListeners();
+    clearTimeout(this.retryTimer);
+    clearTimeout(this.rewardedRetryTimer);
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;

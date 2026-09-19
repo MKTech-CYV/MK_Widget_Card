@@ -31,6 +31,7 @@ import { buildBankQrCacheKey, fetchBankList } from '../services/VietQrService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 import { getShortEcardUrl } from '../services/ShareLinkService';
+import { offerRewardedAd } from '../utils/rewardedPrompt';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -175,6 +176,9 @@ export default function AccountPresetsScreen({ navigation, route }) {
   const [editingItem, setEditingItem] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
+  const [sharingId, setSharingId] = useState(null);
+  const sharingRef = useRef(false);
+  const rewardPromptRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!user?.id) {
@@ -249,11 +253,18 @@ export default function AccountPresetsScreen({ navigation, route }) {
   };
 
   const handleShareECard = async (item) => {
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    setSharingId(item.id);
     try {
       const url = (await getShortEcardUrl(item.id, language)) || buildECardShareUrl(item, language);
+      setSharingId(null);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareFailed'));
+    } finally {
+      sharingRef.current = false;
+      setSharingId(null);
     }
   };
 
@@ -359,6 +370,14 @@ export default function AccountPresetsScreen({ navigation, route }) {
     if (!isBank && !compactText(editForm.full_name)) {
       Alert.alert(t('common.error'), t('myCard.nameRequired'));
       return;
+    }
+
+    if (rewardPromptRef.current) return;
+    rewardPromptRef.current = true;
+    try {
+      await offerRewardedAd(t, 'save');
+    } finally {
+      rewardPromptRef.current = false;
     }
 
     const isCreating = Boolean(editingItem.__isNew);
@@ -514,6 +533,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
                 isBank={isBank}
                 selected={selectedId === item.id}
                 loading={actionId === item.id}
+                sharing={sharingId === item.id}
                 colors={colors}
                 t={t}
                 onApply={() => handleApply(item)}
@@ -547,7 +567,7 @@ export default function AccountPresetsScreen({ navigation, route }) {
   );
 }
 
-const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onShare, onEdit, onDelete }) => {
+const PresetCard = ({ item, isBank, selected, loading, sharing, colors, t, onApply, onShare, onEdit, onDelete }) => {
   const social = item.social || {};
   const phoneDisplay = !isBank
     ? formatInternationalPhone(item.phone_country_code || social.countryCode || social.country_code || '84', item.phone)
@@ -585,9 +605,9 @@ const PresetCard = ({ item, isBank, selected, loading, colors, t, onApply, onSha
           <TouchableOpacity
             style={[styles.iconActionButton, { backgroundColor: `${colors.primary}14` }]}
             onPress={onShare}
-            disabled={loading}
+            disabled={loading || sharing}
           >
-            <Share2 color={colors.primary} size={18} />
+            {sharing ? <ActivityIndicator color={colors.primary} size="small" /> : <Share2 color={colors.primary} size={18} />}
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.iconActionButton, { backgroundColor: `${colors.primary}14` }]}

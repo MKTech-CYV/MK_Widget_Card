@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Bell, CircleUser, QrCode, Settings as SettingsIcon, User } from 'lucide-react-native';
 
@@ -17,6 +17,7 @@ import { useTheme } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
 import QuickTourModal from '../components/QuickTourModal';
+import AdBanner from '../components/AdBanner';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -87,6 +88,26 @@ const QrTabIcon = ({ focused, colors, isDark }) => (
   </View>
 );
 
+// The scan tab's centre button rises 28px above the tab bar, so the banner sits
+// clear of it, and the camera screen shows no ad at all.
+const AD_HIDDEN_ROUTES = ['ScanTab'];
+const QR_BUTTON_OVERHANG = 32;
+
+function TabBarWithAd(props) {
+  const { colors } = useTheme();
+  const activeRoute = props.state.routes[props.state.index]?.name;
+
+  return (
+    <View>
+      <AdBanner
+        hidden={AD_HIDDEN_ROUTES.includes(activeRoute)}
+        style={{ backgroundColor: colors.background, paddingBottom: QR_BUTTON_OVERHANG }}
+      />
+      <BottomTabBar {...props} />
+    </View>
+  );
+}
+
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
   const { language, quickTourCompleted, isReady, completeQuickTour } = useAppPreferences();
@@ -103,6 +124,7 @@ export default function AppNavigator() {
     <>
       <Tab.Navigator
         initialRouteName="MyCardTab"
+        tabBar={(props) => <TabBarWithAd {...props} />}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: colors.primary,

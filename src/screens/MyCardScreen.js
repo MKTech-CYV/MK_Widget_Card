@@ -73,6 +73,7 @@ import {
 } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 import { getShortEcardUrl } from '../services/ShareLinkService';
+import { offerRewardedAd } from '../utils/rewardedPrompt';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
@@ -237,6 +238,9 @@ export default function MyCardScreen({ route }) {
   const [presetApplyItems, setPresetApplyItems] = useState([]);
   const [presetApplyLoading, setPresetApplyLoading] = useState(false);
   const [presetApplyActionId, setPresetApplyActionId] = useState(null);
+  const [sharing, setSharing] = useState(false);
+  const sharingRef = useRef(false);
+  const rewardPromptRef = useRef(false);
   const [ecardForm, setECardForm] = useState(DEFAULT_ECARD_FORM);
   const [bankForm, setBankForm] = useState(DEFAULT_BANK_FORM);
   const previousUserIdRef = useRef(user?.id);
@@ -756,6 +760,8 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
+    if (!(await confirmWithRewardedAd('save'))) return;
+
     const sanitizedBank = sanitizeBankForm(bankForm);
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
@@ -795,6 +801,8 @@ export default function MyCardScreen({ route }) {
       Alert.alert(t('common.error'), t('myCard.bankHolderRequired'));
       return;
     }
+
+    if (!(await confirmWithRewardedAd('save'))) return;
 
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
@@ -846,13 +854,33 @@ export default function MyCardScreen({ route }) {
     );
   };
 
+  // Optional rewarded ad before an action. The ref stops a second tap from
+  // opening another prompt; returns false when a prompt is already open.
+  const confirmWithRewardedAd = async (actionKey) => {
+    if (rewardPromptRef.current) return false;
+    rewardPromptRef.current = true;
+    try {
+      await offerRewardedAd(t, actionKey);
+      return true;
+    } finally {
+      rewardPromptRef.current = false;
+    }
+  };
+
+  const handleChangePresetPress = async (kind) => {
+    if (!(await confirmWithRewardedAd('preset'))) return;
+    openPresetApplyPicker(kind);
+  };
+
   const shareECard = async () => {
-    if (!userData) return;
+    if (!userData || sharingRef.current) return;
     if (!user?.id) {
       requireSignInToShare();
       return;
     }
 
+    sharingRef.current = true;
+    setSharing(true);
     try {
       // Prefer the short link (points at the live preset); the long
       // query-string link is the offline/API-failure fallback.
@@ -870,9 +898,13 @@ export default function MyCardScreen({ route }) {
         }
       }
       const url = (await getShortEcardUrl(presetId, language)) || buildECardShareUrl(userData, language);
+      setSharing(false);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareFailed'));
+    } finally {
+      sharingRef.current = false;
+      setSharing(false);
     }
   };
 
@@ -1340,7 +1372,7 @@ export default function MyCardScreen({ route }) {
                 {Boolean(user?.id) && (
                   <TouchableOpacity
                     style={[styles.changePresetButton, { backgroundColor: colors.background }]}
-                    onPress={() => openPresetApplyPicker(activeTab === 'bank' ? 'bank' : 'ecard')}
+                    onPress={() => handleChangePresetPress(activeTab === 'bank' ? 'bank' : 'ecard')}
                     accessibilityRole="button"
                     accessibilityLabel={t('myCard.changePreset')}
                   >
@@ -1352,10 +1384,12 @@ export default function MyCardScreen({ route }) {
                   <TouchableOpacity
                     style={[styles.cardIconButton, { backgroundColor: colors.background }]}
                     onPress={activeTab === 'bank' ? shareBankQr : shareECard}
+                    disabled={sharing}
                     accessibilityRole="button"
+                    accessibilityState={{ busy: sharing }}
                     accessibilityLabel={activeTab === 'bank' ? t('myCard.shareBankQr') : t('myCard.shareECard')}
                   >
-                    <Share2 color={colors.primary} size={18} />
+                    {sharing ? <ActivityIndicator color={colors.primary} size="small" /> : <Share2 color={colors.primary} size={18} />}
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.cardIconButton, { backgroundColor: colors.background }]}
