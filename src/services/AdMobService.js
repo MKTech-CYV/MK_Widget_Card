@@ -252,9 +252,11 @@ class AdMobManager {
       let earned = false;
       let opened = false;
       let settled = false;
+      let openTimer = null;
       const finish = () => {
         if (settled) return;
         settled = true;
+        clearTimeout(openTimer);
         unsubscribers.forEach((unsubscribe) => unsubscribe?.());
         this.isRewardedShowing = false;
         this.suppressAppOpenUntil = Date.now() + 3000;
@@ -273,6 +275,11 @@ class AdMobManager {
         console.warn('[AdMob] Error showing Rewarded Ad:', error);
         finish();
       });
+
+      // If the ad never opens (presentation blocked), don't leave the caller waiting.
+      openTimer = setTimeout(() => {
+        if (!opened) finish();
+      }, 5000);
     });
   }
 

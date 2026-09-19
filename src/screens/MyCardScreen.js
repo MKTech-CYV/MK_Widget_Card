@@ -133,6 +133,8 @@ const DEFAULT_BANK_FORM = {
 
 const trimText = (value) => `${value || ''}`.trim();
 const ABOUT_MAX_LENGTH = 600;
+// The save-confirmation <Modal> must finish closing before a rewarded ad can be presented.
+const SAVE_MODAL_SETTLE_MS = 800;
 
 const getECardPresetAvatarUrl = (preset = {}) => {
   const social = preset.social || {};
@@ -770,7 +772,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd())) return;
+    if (!(await confirmWithRewardedAd(SAVE_MODAL_SETTLE_MS))) return;
 
     const sanitizedBank = sanitizeBankForm(bankForm);
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
@@ -812,7 +814,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd())) return;
+    if (!(await confirmWithRewardedAd(SAVE_MODAL_SETTLE_MS))) return;
 
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
@@ -866,11 +868,11 @@ export default function MyCardScreen({ route }) {
 
   // Rewarded ad before an action. The ref stops a second tap from starting
   // another ad while one is showing; resolves false when the action should not run.
-  const confirmWithRewardedAd = async () => {
+  const confirmWithRewardedAd = async (settleMs) => {
     if (rewardPromptRef.current) return false;
     rewardPromptRef.current = true;
     try {
-      return await runWithRewardedAd();
+      return await runWithRewardedAd({ settleMs });
     } finally {
       rewardPromptRef.current = false;
     }
