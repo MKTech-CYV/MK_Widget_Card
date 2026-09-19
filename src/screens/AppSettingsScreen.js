@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Bell, Image as ImageIcon } from 'lucide-react-native';
@@ -14,6 +14,7 @@ import { fetchPublicNotifications } from '../services/NotificationService';
 import { fetchECardPresets, updateECardPreset } from '../services/AccountPresetService';
 import { deleteStorageFile, uploadImageToBucket } from '../services/FirebaseStorageService';
 import { StorageService } from '../services/StorageService';
+import { offerRewardedAd } from '../utils/rewardedPrompt';
 
 export default function AppSettingsScreen({ navigation, route }) {
   const { colors } = useTheme();
@@ -23,6 +24,7 @@ export default function AppSettingsScreen({ navigation, route }) {
   const [notificationLoading, setNotificationLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [changingLogo, setChangingLogo] = useState(false);
+  const rewardPromptRef = useRef(false);
   const t = (key) => getTranslation(language, key);
   const showBack = route?.params?.showBack !== false;
 
@@ -71,6 +73,14 @@ export default function AppSettingsScreen({ navigation, route }) {
     if (!user?.id) {
       promptSignInForLogo();
       return;
+    }
+
+    if (rewardPromptRef.current) return;
+    rewardPromptRef.current = true;
+    try {
+      await offerRewardedAd(t, 'logo');
+    } finally {
+      rewardPromptRef.current = false;
     }
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();

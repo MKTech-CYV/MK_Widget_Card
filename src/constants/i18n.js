@@ -259,6 +259,16 @@ const translations = {
       ecardFallback: 'eCard',
       bankFallback: 'QR Bank',
     },
+    ads: {
+      rewardTitle: 'Ủng hộ MK Widget Card',
+      rewardWatch: 'Xem quảng cáo',
+      rewardSkip: 'Bỏ qua',
+      rewardMessage: {
+        logo: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi đổi logo?',
+        preset: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi đổi mẫu?',
+        save: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi lưu?',
+      },
+    },
     scan: {
       cameraPermissionTitle: 'Quyền truy cập Camera',
       cameraPermissionDesc: 'Chúng tôi cần quyền truy cập camera để quét mã QR danh thiếp.',
@@ -647,6 +657,16 @@ const translations = {
       block7Content: 'The app does not sell personal data, does not use cross-app tracking by third parties, and currently does not use push notifications. Ads provided by Google AdMob may use your device\'s advertising identifier (Advertising ID); you can reset or limit it in your iOS/Android privacy settings. Device information, IP address, and sign-in history are used only to secure accounts, detect abuse, troubleshoot, and support users, and are visible only to authorized administrators. Sign-in history is deleted automatically after 180 days, and all of this data is deleted when you delete your account. Data sent to Firebase, VietQR, or mktechvn.com uses HTTPS where supported by the service. You should still protect your device and account and avoid sharing links that contain sensitive information unless necessary.',
       block8Title: '8. User control and contact',
       block8Content: 'You can edit data in My eCard, delete or update saved account presets, sign out, delete your account (including all account data), clear app data, or uninstall the app. For support or account data requests, contact contact@mktechvn.com.',
+    },
+    ads: {
+      rewardTitle: 'Support MK Widget Card',
+      rewardWatch: 'Watch ad',
+      rewardSkip: 'Skip',
+      rewardMessage: {
+        logo: 'Watch a short ad to support us before changing your logo?',
+        preset: 'Watch a short ad to support us before switching your template?',
+        save: 'Watch a short ad to support us before saving?',
+      },
     },
     scan: {
       cameraPermissionTitle: 'Camera access',
