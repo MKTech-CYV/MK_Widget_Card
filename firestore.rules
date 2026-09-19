@@ -12,20 +12,39 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    function aboutIsValid() {
+      return !('about' in request.resource.data)
+        || (request.resource.data.about is string && request.resource.data.about.size() <= 600);
+    }
+
     // Doc id == uid. Owner reads/writes their own profile; admins can read.
     match /profiles/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       allow write: if isOwner(uid);
     }
 
+    // Presets: the owner can read/write them, but cannot re-assign a preset to
+    // another user (user_id is immutable) or tamper with share_code, which only
+    // the website backend sets (short links are validated server-side).
     match /user_ecards/{docId} {
-      allow read, update, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
+      allow read, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.user_id == request.auth.uid
+        && !('share_code' in request.resource.data)
+        && aboutIsValid();
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.get('share_code', null) == resource.data.get('share_code', null)
+        && aboutIsValid();
     }
 
     match /user_bank_qrs/{docId} {
-      allow read, update, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow read, delete: if request.auth != null && resource.data.user_id == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid;
     }
 
     // Public in-app announcements: guests read active ones. Only admins
