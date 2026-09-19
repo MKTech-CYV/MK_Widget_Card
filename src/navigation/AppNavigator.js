@@ -17,6 +17,7 @@ import { useTheme } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
 import QuickTourModal from '../components/QuickTourModal';
+import { promptForUpdateIfNeeded } from '../services/AppUpdateService';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -98,6 +99,18 @@ export default function AppNavigator() {
       setShowTour(true);
     }
   }, [isReady, quickTourCompleted]);
+
+  // Ask users on an older store build to update, once the quick tour (if any)
+  // is out of the way.
+  useEffect(() => {
+    if (!isReady || showTour) return undefined;
+
+    const timer = setTimeout(() => {
+      promptForUpdateIfNeeded({ t, language }).catch(() => null);
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, showTour]);
 
   return (
     <>

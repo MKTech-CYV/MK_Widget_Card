@@ -258,6 +258,15 @@ const translations = {
       ecardFallback: 'eCard',
       bankFallback: 'QR Bank',
     },
+    update: {
+      title: 'Có phiên bản mới',
+      message: 'Phiên bản {latest} đã có trên {store}. Cập nhật để dùng các tính năng mới nhất và bảo mật tốt hơn.',
+      messageForced: 'Phiên bản bạn đang dùng đã cũ. Vui lòng cập nhật lên phiên bản {latest} trên {store} để tiếp tục sử dụng.',
+      now: 'Cập nhật',
+      later: 'Để sau',
+      storeIos: 'App Store',
+      storeAndroid: 'Google Play',
+    },
     ads: {
       rewardHint: 'Xem 1 quảng cáo ngắn để tiếp tục',
     },
@@ -648,6 +657,15 @@ const translations = {
       block7Content: 'The app does not sell personal data, does not use cross-app tracking by third parties, and currently does not use push notifications. Ads provided by Google AdMob may use your device\'s advertising identifier (Advertising ID); you can reset or limit it in your iOS/Android privacy settings. Device information, IP address, and sign-in history are used only to secure accounts, detect abuse, troubleshoot, and support users, and are visible only to authorized administrators. Sign-in history is deleted automatically after 180 days, and all of this data is deleted when you delete your account. Data sent to Firebase, VietQR, or mktechvn.com uses HTTPS where supported by the service. You should still protect your device and account and avoid sharing links that contain sensitive information unless necessary.',
       block8Title: '8. User control and contact',
       block8Content: 'You can edit data in My eCard, delete or update saved account presets, sign out, delete your account (including all account data), clear app data, or uninstall the app. For support or account data requests, contact contact@mktechvn.com.',
+    },
+    update: {
+      title: 'New version available',
+      message: 'Version {latest} is available on {store}. Update to get the latest features and better security.',
+      messageForced: 'Your version is out of date. Please update to version {latest} on {store} to keep using the app.',
+      now: 'Update',
+      later: 'Later',
+      storeIos: 'App Store',
+      storeAndroid: 'Google Play',
     },
     ads: {
       rewardHint: 'Watch a short ad to continue',

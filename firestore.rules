@@ -71,6 +71,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Latest published app versions (app_config/app_version): readable by every
+    // install so it can prompt for an update; only admins change it.
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Short share links are resolved server-side only.
     match /share_links/{code} {
       allow read, write: if false;
