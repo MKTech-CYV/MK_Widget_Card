@@ -856,7 +856,19 @@ export default function MyCardScreen({ route }) {
     try {
       // Prefer the short link (points at the live preset); the long
       // query-string link is the offline/API-failure fallback.
-      const presetId = StorageService.getAccountPresetSource(userData).ecardPresetId;
+      let presetId = StorageService.getAccountPresetSource(userData).ecardPresetId;
+      if (!presetId) {
+        // Card created before signing in: upsert it to the account first so
+        // the short link has a preset to point at.
+        try {
+          const synced = await syncPrimaryToBackend('ecard', userData);
+          await StorageService.setUserData(synced);
+          setUserData(synced);
+          presetId = StorageService.getAccountPresetSource(synced).ecardPresetId;
+        } catch {
+          presetId = null;
+        }
+      }
       const url = (await getShortEcardUrl(presetId, language)) || buildECardShareUrl(userData, language);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
