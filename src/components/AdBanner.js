@@ -1,21 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { BANNER_AD_UNIT_ID } from '../services/AdMobService';
 
 const RETRY_AFTER_FAILURE_MS = 60 * 1000;
 
-// Anchored adaptive banner. It collapses to nothing until an ad has loaded (and
-// after a failed load), so screens never show an empty strip. `hidden` keeps the
-// view mounted (no new ad request when switching back) but takes no space.
-export default function AdBanner({ hidden = false, style }) {
+// Inline anchored-adaptive banner placed inside a screen's content (not sticky).
+// It is as wide as the screen (centred, so it bleeds through the screen's side
+// padding) and has no rounded corners. It takes no space until an ad has loaded and collapses again after a failed
+// load, retrying a minute later.
+export default function AdBanner({ style }) {
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
   const retryTimer = useRef(null);
+  const { width } = useWindowDimensions();
 
   useEffect(() => () => clearTimeout(retryTimer.current), []);
 
-  if (!BANNER_AD_UNIT_ID) return null;
+  if (!BANNER_AD_UNIT_ID || failed) return null;
 
   const handleFailed = () => {
     setFailed(true);
@@ -26,10 +28,8 @@ export default function AdBanner({ hidden = false, style }) {
     }, RETRY_AFTER_FAILURE_MS);
   };
 
-  if (failed) return null;
-
   return (
-    <View style={hidden ? { height: 0, overflow: 'hidden' } : style} pointerEvents={hidden ? 'none' : 'auto'}>
+    <View style={[styles.slot, { width }, style]}>
       <BannerAd
         key={attempt}
         unitId={BANNER_AD_UNIT_ID}
@@ -40,3 +40,11 @@ export default function AdBanner({ hidden = false, style }) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  slot: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+});

@@ -260,14 +260,7 @@ const translations = {
       bankFallback: 'QR Bank',
     },
     ads: {
-      rewardTitle: 'Ủng hộ MK Widget Card',
-      rewardWatch: 'Xem quảng cáo',
-      rewardSkip: 'Bỏ qua',
-      rewardMessage: {
-        logo: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi đổi logo?',
-        preset: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi đổi mẫu?',
-        save: 'Xem một quảng cáo ngắn để ủng hộ chúng tôi trước khi lưu?',
-      },
+      rewardHint: 'Xem 1 quảng cáo ngắn để tiếp tục',
     },
     scan: {
       cameraPermissionTitle: 'Quyền truy cập Camera',
@@ -659,14 +652,7 @@ const translations = {
       block8Content: 'You can edit data in My eCard, delete or update saved account presets, sign out, delete your account (including all account data), clear app data, or uninstall the app. For support or account data requests, contact contact@mktechvn.com.',
     },
     ads: {
-      rewardTitle: 'Support MK Widget Card',
-      rewardWatch: 'Watch ad',
-      rewardSkip: 'Skip',
-      rewardMessage: {
-        logo: 'Watch a short ad to support us before changing your logo?',
-        preset: 'Watch a short ad to support us before switching your template?',
-        save: 'Watch a short ad to support us before saving?',
-      },
+      rewardHint: 'Watch a short ad to continue',
     },
     scan: {
       cameraPermissionTitle: 'Camera access',

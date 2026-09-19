@@ -73,7 +73,9 @@ import {
 } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 import { getShortEcardUrl } from '../services/ShareLinkService';
-import { offerRewardedAd } from '../utils/rewardedPrompt';
+import { runWithRewardedAd } from '../utils/rewardedPrompt';
+import AdBanner from '../components/AdBanner';
+import CachedImage from '../components/CachedImage';
 
 const { width } = Dimensions.get('window');
 const keyboardVerticalOffset = Platform.select({ ios: 40, android: 0, default: 0 });
@@ -317,23 +319,31 @@ export default function MyCardScreen({ route }) {
     }
   };
 
-  const loadData = async () => {
-    const localData = await StorageService.getUserData().catch(() => null);
+  // Show the copy stored on the device straight away (so a slow or missing
+  // connection never leaves the screen loading), then refresh from the account
+  // in the background. A newer load, or an edit in progress, wins over a late
+  // network response.
+  const loadRequestRef = useRef(0);
+  const editingSectionRef = useRef(null);
+  editingSectionRef.current = editingSection;
 
-    // Signed-in accounts treat the backend as the source of truth: pull the
-    // selected eCard/QR Bank presets before rendering so we don't briefly
-    // show stale/local data. Falls back to the local copy when offline.
-    if (user?.id) {
-      try {
-        const merged = await pullSelectedAccountDataToLocal(user.id, localData);
-        applyLocalData(merged || localData);
-        return;
-      } catch {
-        // Offline or request failed: fall through to the local/cached copy.
-      }
-    }
+  const loadData = async () => {
+    const requestId = ++loadRequestRef.current;
+    const localData = await StorageService.getUserData().catch(() => null);
+    if (requestId !== loadRequestRef.current) return;
 
     applyLocalData(localData);
+
+    if (!user?.id) return;
+
+    try {
+      const merged = await pullSelectedAccountDataToLocal(user.id, localData);
+      if (merged && requestId === loadRequestRef.current && !editingSectionRef.current) {
+        applyLocalData(merged);
+      }
+    } catch {
+      // Offline or request failed: the local copy is already showing.
+    }
   };
 
   const handleHomeRefresh = async () => {
@@ -760,7 +770,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd('save'))) return;
+    if (!(await confirmWithRewardedAd())) return;
 
     const sanitizedBank = sanitizeBankForm(bankForm);
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
@@ -802,7 +812,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd('save'))) return;
+    if (!(await confirmWithRewardedAd())) return;
 
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
@@ -854,21 +864,20 @@ export default function MyCardScreen({ route }) {
     );
   };
 
-  // Optional rewarded ad before an action. The ref stops a second tap from
-  // opening another prompt; returns false when a prompt is already open.
-  const confirmWithRewardedAd = async (actionKey) => {
+  // Rewarded ad before an action. The ref stops a second tap from starting
+  // another ad while one is showing; resolves false when the action should not run.
+  const confirmWithRewardedAd = async () => {
     if (rewardPromptRef.current) return false;
     rewardPromptRef.current = true;
     try {
-      await offerRewardedAd(t, actionKey);
-      return true;
+      return await runWithRewardedAd();
     } finally {
       rewardPromptRef.current = false;
     }
   };
 
   const handleChangePresetPress = async (kind) => {
-    if (!(await confirmWithRewardedAd('preset'))) return;
+    if (!(await confirmWithRewardedAd())) return;
     openPresetApplyPicker(kind);
   };
 
@@ -1353,11 +1362,13 @@ export default function MyCardScreen({ route }) {
             </TouchableOpacity>
           </View>
 
+          <AdBanner />
+
           <View style={[styles.digitalCard, { backgroundColor: colors.card }]}>
             <View style={styles.cardTopBar}>
               {activeTab === 'contact' ? (
                 userData.avatar ? (
-                  <Image source={{ uri: userData.avatar }} style={styles.cardAvatar} />
+                  <CachedImage uri={userData.avatar} style={styles.cardAvatar} />
                 ) : (
                   <View style={[styles.cardAvatarPlaceholder, { backgroundColor: colors.background }]}>
                     <UserIcon color={colors.primary} size={40} />
@@ -1560,8 +1571,9 @@ const ContactQrCode = ({ value, size, logoSize, logoUrl }) => {
           }
         ]}
       >
-        <Image
-          source={logoUrl ? { uri: logoUrl } : APP_LOGO}
+        <CachedImage
+          uri={logoUrl || undefined}
+          fallbackSource={APP_LOGO}
           style={[
             styles.qrLogoImage,
             {

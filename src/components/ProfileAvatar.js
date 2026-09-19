@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import CachedImage from './CachedImage';
 
 const ProfileAvatar = ({ profile, colors, size = 64, style }) => {
   const [imageFailed, setImageFailed] = useState(false);
@@ -22,8 +23,8 @@ const ProfileAvatar = ({ profile, colors, size = 64, style }) => {
       ]}
     >
       {showImage ? (
-        <Image
-          source={{ uri: avatarUrl }}
+        <CachedImage
+          uri={avatarUrl}
           style={{ width: size, height: size, borderRadius: radius }}
           onError={() => setImageFailed(true)}
         />
