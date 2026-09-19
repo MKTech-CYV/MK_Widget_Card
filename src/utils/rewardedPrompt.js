@@ -1,28 +1,14 @@
-import { Alert } from 'react-native';
 import { AdMobService } from '../services/AdMobService';
 
-// Offers an optional rewarded ad before an action (change logo / change preset /
-// save). Resolves when the action should go ahead, which is always: the user can
-// skip, and when no ad is ready (offline, no fill, AdMob frequency cap) the
-// prompt is not shown at all, so this never blocks the user.
-export const offerRewardedAd = (t, actionKey) => new Promise((resolve) => {
-  if (!AdMobService.isRewardedReady()) {
-    resolve();
-    return;
-  }
+// Shows a rewarded ad straight away (no dialog) before an action such as
+// changing the logo, switching template or saving. Resolves true when the
+// action should go ahead: the reward was earned, or no ad could be shown (not
+// loaded yet, offline, AdMob frequency cap), so users are never stuck.
+// Resolves false only if the user closed an ad that did open before it was
+// completed; they can simply try the action again.
+export const runWithRewardedAd = async () => {
+  if (!AdMobService.isRewardedReady()) return true;
 
-  Alert.alert(
-    t('ads.rewardTitle'),
-    t(`ads.rewardMessage.${actionKey}`),
-    [
-      { text: t('ads.rewardSkip'), style: 'cancel', onPress: () => resolve() },
-      {
-        text: t('ads.rewardWatch'),
-        onPress: () => {
-          AdMobService.showRewardedAd().finally(() => resolve());
-        },
-      },
-    ],
-    { cancelable: false },
-  );
-});
+  const result = await AdMobService.showRewardedAd();
+  return result !== 'dismissed';
+};

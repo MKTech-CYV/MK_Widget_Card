@@ -237,11 +237,12 @@ class AdMobManager {
   }
 
   /**
-   * Hiển thị Rewarded. Resolve khi quảng cáo đóng: true nếu người dùng đã nhận thưởng.
+   * Hiển thị Rewarded. Resolve khi quảng cáo kết thúc với một trong:
+   * 'earned' (đã nhận thưởng), 'dismissed' (đã mở nhưng đóng sớm), 'failed' (không hiển thị được).
    * Không bao giờ reject để luồng của người dùng không bị chặn.
    */
   showRewardedAd() {
-    if (!this.isRewardedReady()) return Promise.resolve(false);
+    if (!this.isRewardedReady()) return Promise.resolve('failed');
 
     const ad = this.rewardedAd;
     this.isRewardedShowing = true;
@@ -249,6 +250,7 @@ class AdMobManager {
 
     return new Promise((resolve) => {
       let earned = false;
+      let opened = false;
       let settled = false;
       const finish = () => {
         if (settled) return;
@@ -257,10 +259,11 @@ class AdMobManager {
         this.isRewardedShowing = false;
         this.suppressAppOpenUntil = Date.now() + 3000;
         this.loadRewardedAd();
-        resolve(earned);
+        resolve(earned ? 'earned' : opened ? 'dismissed' : 'failed');
       };
 
       const unsubscribers = [
+        ad.addAdEventListener(AdEventType.OPENED, () => { opened = true; }),
         ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => { earned = true; }),
         ad.addAdEventListener(AdEventType.CLOSED, finish),
         ad.addAdEventListener(AdEventType.ERROR, finish),

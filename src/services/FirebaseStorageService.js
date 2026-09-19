@@ -1,6 +1,7 @@
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, isFirebaseConfigured } from './firebaseClient';
 import { getFriendlyErrorMessage } from '../utils/errorParser';
+import { seedImageCache } from './ImageCacheService';
 
 const MIME_EXTENSIONS = {
   'image/jpeg': 'jpg',
@@ -164,6 +165,7 @@ export const uploadImageToBucket = async ({ bucket, userId, asset, dataUri, pref
 
   await uploadBytes(fileRef, blob, { contentType, cacheControl: '3600' });
   const publicUrl = await getDownloadURL(fileRef);
+  seedImageCache(publicUrl, uri);
 
   return { path, publicUrl };
 };

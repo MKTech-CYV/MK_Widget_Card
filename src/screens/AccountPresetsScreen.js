@@ -31,7 +31,8 @@ import { buildBankQrCacheKey, fetchBankList } from '../services/VietQrService';
 import { formatInternationalPhone, normalizeCountryCode, normalizePhoneForCountry } from '../utils/vcard';
 import { buildBankQrShareUrl, buildECardShareUrl, shareUrl } from '../utils/ecardShareLink';
 import { getShortEcardUrl } from '../services/ShareLinkService';
-import { offerRewardedAd } from '../utils/rewardedPrompt';
+import { runWithRewardedAd } from '../utils/rewardedPrompt';
+import CachedImage from '../components/CachedImage';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -374,11 +375,13 @@ export default function AccountPresetsScreen({ navigation, route }) {
 
     if (rewardPromptRef.current) return;
     rewardPromptRef.current = true;
+    let proceed = true;
     try {
-      await offerRewardedAd(t, 'save');
+      proceed = await runWithRewardedAd();
     } finally {
       rewardPromptRef.current = false;
     }
+    if (!proceed) return;
 
     const isCreating = Boolean(editingItem.__isNew);
     setSavingEdit(true);
@@ -588,7 +591,7 @@ const PresetCard = ({ item, isBank, selected, loading, sharing, colors, t, onApp
       <View style={styles.presetTopBar}>
         <View style={[styles.iconBox, { backgroundColor: `${colors.primary}14` }]}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.presetAvatar} />
+            <CachedImage uri={avatarUrl} style={styles.presetAvatar} />
           ) : (
             <Icon color={colors.primary} size={22} />
           )}

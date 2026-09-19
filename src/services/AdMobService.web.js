@@ -14,7 +14,7 @@ class NoopAdMobManager {
     return false;
   }
   async showRewardedAd() {
-    return false;
+    return 'failed';
   }
   async showAppOpenAdIfAvailable() {
     return false;

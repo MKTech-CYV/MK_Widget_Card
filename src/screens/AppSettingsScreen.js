@@ -14,7 +14,8 @@ import { fetchPublicNotifications } from '../services/NotificationService';
 import { fetchECardPresets, updateECardPreset } from '../services/AccountPresetService';
 import { deleteStorageFile, uploadImageToBucket } from '../services/FirebaseStorageService';
 import { StorageService } from '../services/StorageService';
-import { offerRewardedAd } from '../utils/rewardedPrompt';
+import { runWithRewardedAd } from '../utils/rewardedPrompt';
+import AdBanner from '../components/AdBanner';
 
 export default function AppSettingsScreen({ navigation, route }) {
   const { colors } = useTheme();
@@ -77,11 +78,13 @@ export default function AppSettingsScreen({ navigation, route }) {
 
     if (rewardPromptRef.current) return;
     rewardPromptRef.current = true;
+    let proceed = true;
     try {
-      await offerRewardedAd(t, 'logo');
+      proceed = await runWithRewardedAd();
     } finally {
       rewardPromptRef.current = false;
     }
+    if (!proceed) return;
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -144,11 +147,13 @@ export default function AppSettingsScreen({ navigation, route }) {
     >
       <PreferencesSection t={t} />
 
+      <AdBanner />
+
       <SettingsSection title={t('settings.ecardSection')} colors={colors}>
         <SettingsItem
           icon={changingLogo ? <ActivityIndicator color={colors.primary} /> : <ImageIcon size={22} color={colors.primary} />}
           label={t('settings.changeLogo')}
-          subtitle={t('settings.changeLogoDesc')}
+          subtitle={`${t('settings.changeLogoDesc')} · ${t('ads.rewardHint')}`}
           onPress={handleChangeLogo}
           colors={colors}
         />

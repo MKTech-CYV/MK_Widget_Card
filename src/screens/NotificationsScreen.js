@@ -9,6 +9,8 @@ import { fetchPublicNotifications } from '../services/NotificationService';
 import { StorageService } from '../services/StorageService';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
+import AdBanner from '../components/AdBanner';
+import CachedImage from '../components/CachedImage';
 
 const formatTime = (ts) => {
   try {
@@ -97,6 +99,7 @@ export default function NotificationsScreen({ navigation, route }) {
           </View>
         ) : (
           <View style={styles.list}>
+            <AdBanner />
             {items.map((n) => (
               <TouchableOpacity
                 key={n.id}
@@ -105,7 +108,7 @@ export default function NotificationsScreen({ navigation, route }) {
                 onPress={() => setSelectedNotification(n)}
               >
                 {n.thumbnailUrl ? (
-                  <Image source={{ uri: n.thumbnailUrl }} style={styles.thumbnail} />
+                  <CachedImage uri={n.thumbnailUrl} style={styles.thumbnail} />
                 ) : (
                   <View style={[styles.itemIcon, { backgroundColor: `${colors.primary}14` }]}>
                     <Bell size={18} color={colors.primary} />
@@ -159,7 +162,7 @@ const NotificationDetailModal = ({ notification, colors, t, onClose }) => {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailContent}>
-            {!!notification.imageUrl && <Image source={{ uri: notification.imageUrl }} style={styles.detailImage} />}
+            {!!notification.imageUrl && <CachedImage uri={notification.imageUrl} style={styles.detailImage} />}
             {!!body && <Text style={[styles.detailBody, { color: colors.textSecondary }]}>{body}</Text>}
             <Text style={[styles.detailMeta, { color: colors.textSecondary }]}>
               {formatTime(notification.publishedAt || notification.receivedAt)}

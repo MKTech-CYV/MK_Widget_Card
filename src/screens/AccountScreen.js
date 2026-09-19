@@ -10,6 +10,7 @@ import { useTheme, Spacing } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
+import AdBanner from '../components/AdBanner';
 import { getUserProfile } from '../utils/userProfile';
 
 export default function AccountScreen({ navigation }) {
@@ -50,6 +51,8 @@ export default function AccountScreen({ navigation }) {
           t={t}
           onPress={() => navigation.navigate('AccountDetail')}
         />
+
+        <AdBanner />
 
         {user && (
           <SettingsSection title={t('accountPresets.sectionTitle')} colors={colors}>
