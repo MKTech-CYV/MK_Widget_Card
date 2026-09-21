@@ -23,6 +23,13 @@ service cloud.firestore {
       allow write: if isOwner(uid);
     }
 
+    // Accounts with ads turned off: ad_free_users/{uid} exists. Only an admin can
+    // create or remove it; the account owner can just read their own document.
+    match /ad_free_users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
     // Presets: the owner can read/write them, but cannot re-assign a preset to
     // another user (user_id is immutable) or tamper with share_code, which only
     // the website backend sets (short links are validated server-side).

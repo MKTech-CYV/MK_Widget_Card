@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { BANNER_AD_UNIT_ID } from '../services/AdMobService';
+import { useAdsDisabled } from '../hooks/useAdsDisabled';
 
 const RETRY_AFTER_FAILURE_MS = 60 * 1000;
 
@@ -14,10 +15,11 @@ export default function AdBanner({ style }) {
   const [failed, setFailed] = useState(false);
   const retryTimer = useRef(null);
   const { width } = useWindowDimensions();
+  const adsDisabled = useAdsDisabled();
 
   useEffect(() => () => clearTimeout(retryTimer.current), []);
 
-  if (!BANNER_AD_UNIT_ID || failed) return null;
+  if (!BANNER_AD_UNIT_ID || failed || adsDisabled) return null;
 
   const handleFailed = () => {
     setFailed(true);

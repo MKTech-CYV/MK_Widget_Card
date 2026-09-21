@@ -259,7 +259,13 @@ export default function AccountPresetsScreen({ navigation, route }) {
     sharingRef.current = true;
     setSharingId(item.id);
     try {
-      const url = (await getShortEcardUrl(item.id, language)) || buildECardShareUrl(item, language);
+      const urlPromise = getShortEcardUrl(item.id, language)
+        .then((short) => short || buildECardShareUrl(item, language))
+        .catch(() => buildECardShareUrl(item, language));
+
+      if (!(await runWithRewardedAd())) return;
+
+      const url = await urlPromise;
       setSharingId(null);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
@@ -271,15 +277,25 @@ export default function AccountPresetsScreen({ navigation, route }) {
   };
 
   const handleShareBankQr = async (item) => {
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    setSharingId(item.id);
     try {
       const url = buildBankQrShareUrl(item);
       if (!url) {
         Alert.alert(t('common.error'), t('myCard.noBankQr'));
         return;
       }
+
+      if (!(await runWithRewardedAd())) return;
+
+      setSharingId(null);
       await shareUrl({ title: t('myCard.shareBankQr'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareBankFailed'));
+    } finally {
+      sharingRef.current = false;
+      setSharingId(null);
     }
   };
 

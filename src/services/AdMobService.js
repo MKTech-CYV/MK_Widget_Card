@@ -61,6 +61,8 @@ class AdMobManager {
     this.rewardedRetryTimer = null;
     this.rewardedListeners = [];
     this.suppressAppOpenUntil = 0;
+    this.adsDisabled = false;
+    this.adsDisabledListeners = new Set();
     this.appStateSubscription = null;
     this.currentAppState = AppState.currentState;
     this.unsubscribeLoaded = null;
@@ -104,7 +106,7 @@ class AdMobManager {
    * Tải trước (preload) quảng cáo App Open
    */
   loadAppOpenAd() {
-    if (this.isLoading || this.isShowing) return;
+    if (this.adsDisabled || this.isLoading || this.isShowing) return;
 
     // Hủy các listener cũ nếu có
     this.cleanListeners();
@@ -158,6 +160,8 @@ class AdMobManager {
    * Hiển thị quảng cáo App Open nếu thỏa mãn điều kiện
    */
   async showAppOpenAdIfAvailable() {
+    if (this.adsDisabled) return false;
+
     if (this.isShowing || this.isRewardedShowing) {
       console.log('[AdMob] An ad is already showing.');
       return false;
@@ -187,11 +191,37 @@ class AdMobManager {
   }
 
   /**
+   * Tài khoản được tắt quảng cáo (ad_free_users/{uid} do admin tạo).
+   * Khi bật: không tải, không hiển thị bất kỳ quảng cáo nào (banner, App Open, Rewarded).
+   */
+  isAdsDisabled() {
+    return this.adsDisabled;
+  }
+
+  subscribeAdsDisabled(listener) {
+    this.adsDisabledListeners.add(listener);
+    return () => this.adsDisabledListeners.delete(listener);
+  }
+
+  setAdsDisabled(value) {
+    const next = Boolean(value);
+    if (next === this.adsDisabled) return;
+
+    this.adsDisabled = next;
+    this.adsDisabledListeners.forEach((listener) => listener());
+
+    if (!next && this.isInitialized) {
+      this.loadAppOpenAd();
+      this.loadRewardedAd();
+    }
+  }
+
+  /**
    * Rewarded: tải trước quảng cáo. Tần suất do AdMob Console điều khiển; khi bị giới hạn
    * hoặc không có quảng cáo (no fill) thì thử lại giãn dần và người dùng không bị chặn.
    */
   loadRewardedAd() {
-    if (!REWARDED_AD_UNIT_ID || this.isRewardedLoading || this.isRewardedShowing) return;
+    if (this.adsDisabled || !REWARDED_AD_UNIT_ID || this.isRewardedLoading || this.isRewardedShowing) return;
 
     this.cleanRewardedListeners();
     this.isRewardedLoading = true;
@@ -233,7 +263,7 @@ class AdMobManager {
   }
 
   isRewardedReady() {
-    return Boolean(REWARDED_AD_UNIT_ID) && this.isRewardedLoaded && Boolean(this.rewardedAd) && !this.isRewardedShowing;
+    return !this.adsDisabled && Boolean(REWARDED_AD_UNIT_ID) && this.isRewardedLoaded && Boolean(this.rewardedAd) && !this.isRewardedShowing;
   }
 
   /**

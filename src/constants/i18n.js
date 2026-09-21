@@ -269,6 +269,9 @@ const translations = {
     },
     ads: {
       rewardHint: 'Xem 1 quảng cáo ngắn để tiếp tục',
+      sectionTitle: 'Quảng cáo',
+      disabledLabel: 'Không hiển thị quảng cáo',
+      disabledDesc: 'Tài khoản của bạn đang được tắt quảng cáo',
     },
     scan: {
       cameraPermissionTitle: 'Quyền truy cập Camera',
@@ -669,6 +672,9 @@ const translations = {
     },
     ads: {
       rewardHint: 'Watch a short ad to continue',
+      sectionTitle: 'Ads',
+      disabledLabel: 'Ad-free',
+      disabledDesc: 'Ads are turned off for your account',
     },
     scan: {
       cameraPermissionTitle: 'Camera access',

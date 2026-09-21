@@ -8,6 +8,13 @@ class NoopAdMobManager {
   async initialize() {
     // No-op on Web
   }
+  isAdsDisabled() {
+    return false;
+  }
+  subscribeAdsDisabled() {
+    return () => {};
+  }
+  setAdsDisabled() {}
   loadAppOpenAd() {}
   loadRewardedAd() {}
   isRewardedReady() {

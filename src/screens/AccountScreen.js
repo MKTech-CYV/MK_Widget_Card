@@ -11,6 +11,7 @@ import { useAppPreferences } from '../context/AppPreferencesContext';
 import { useAuth } from '../context/AuthContext';
 import { getTranslation } from '../constants/i18n';
 import AdBanner from '../components/AdBanner';
+import { useAdsDisabled } from '../hooks/useAdsDisabled';
 import { getUserProfile } from '../utils/userProfile';
 
 export default function AccountScreen({ navigation }) {
@@ -19,6 +20,7 @@ export default function AccountScreen({ navigation }) {
   const { language } = useAppPreferences();
   const { user, accountProfile, isAuthReady, refreshSession } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const adsDisabled = useAdsDisabled();
   const t = (key) => getTranslation(language, key);
   const profile = getUserProfile(user, accountProfile);
 
@@ -53,6 +55,18 @@ export default function AccountScreen({ navigation }) {
         />
 
         <AdBanner />
+
+        {user && adsDisabled && (
+          <SettingsSection title={t('ads.sectionTitle')} colors={colors}>
+            <SettingsItem
+              icon={<ShieldCheck size={22} color={colors.success} />}
+              label={t('ads.disabledLabel')}
+              subtitle={t('ads.disabledDesc')}
+              colors={colors}
+              showChevron={false}
+            />
+          </SettingsSection>
+        )}
 
         {user && (
           <SettingsSection title={t('accountPresets.sectionTitle')} colors={colors}>
