@@ -133,6 +133,8 @@ const DEFAULT_BANK_FORM = {
 
 const trimText = (value) => `${value || ''}`.trim();
 const ABOUT_MAX_LENGTH = 600;
+// The save-confirmation <Modal> must finish closing before a rewarded ad can be presented.
+const SAVE_MODAL_SETTLE_MS = 800;
 
 const getECardPresetAvatarUrl = (preset = {}) => {
   const social = preset.social || {};
@@ -770,7 +772,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd())) return;
+    if (!(await confirmWithRewardedAd(SAVE_MODAL_SETTLE_MS))) return;
 
     const sanitizedBank = sanitizeBankForm(bankForm);
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
@@ -812,7 +814,7 @@ export default function MyCardScreen({ route }) {
       return;
     }
 
-    if (!(await confirmWithRewardedAd())) return;
+    if (!(await confirmWithRewardedAd(SAVE_MODAL_SETTLE_MS))) return;
 
     let nextData = mergeStoredData(userData, sanitizedECard, sanitizedBank);
 
@@ -866,11 +868,11 @@ export default function MyCardScreen({ route }) {
 
   // Rewarded ad before an action. The ref stops a second tap from starting
   // another ad while one is showing; resolves false when the action should not run.
-  const confirmWithRewardedAd = async () => {
+  const confirmWithRewardedAd = async (settleMs) => {
     if (rewardPromptRef.current) return false;
     rewardPromptRef.current = true;
     try {
-      return await runWithRewardedAd();
+      return await runWithRewardedAd({ settleMs });
     } finally {
       rewardPromptRef.current = false;
     }
@@ -892,21 +894,34 @@ export default function MyCardScreen({ route }) {
     setSharing(true);
     try {
       // Prefer the short link (points at the live preset); the long
-      // query-string link is the offline/API-failure fallback.
-      let presetId = StorageService.getAccountPresetSource(userData).ecardPresetId;
-      if (!presetId) {
-        // Card created before signing in: upsert it to the account first so
-        // the short link has a preset to point at.
+      // query-string link is the offline/API-failure fallback. It is prepared
+      // while the rewarded ad (if one is ready) is showing, so sharing does not
+      // wait for it afterwards.
+      const resolveUrl = async () => {
         try {
-          const synced = await syncPrimaryToBackend('ecard', userData);
-          await StorageService.setUserData(synced);
-          setUserData(synced);
-          presetId = StorageService.getAccountPresetSource(synced).ecardPresetId;
+          let presetId = StorageService.getAccountPresetSource(userData).ecardPresetId;
+          if (!presetId) {
+            // Card created before signing in: upsert it to the account first so
+            // the short link has a preset to point at.
+            try {
+              const synced = await syncPrimaryToBackend('ecard', userData);
+              await StorageService.setUserData(synced);
+              setUserData(synced);
+              presetId = StorageService.getAccountPresetSource(synced).ecardPresetId;
+            } catch {
+              presetId = null;
+            }
+          }
+          return (await getShortEcardUrl(presetId, language)) || buildECardShareUrl(userData, language);
         } catch {
-          presetId = null;
+          return buildECardShareUrl(userData, language);
         }
-      }
-      const url = (await getShortEcardUrl(presetId, language)) || buildECardShareUrl(userData, language);
+      };
+      const urlPromise = resolveUrl();
+
+      if (!(await confirmWithRewardedAd())) return;
+
+      const url = await urlPromise;
       setSharing(false);
       await shareUrl({ title: t('myCard.shareECard'), url });
     } catch (error) {
@@ -918,21 +933,30 @@ export default function MyCardScreen({ route }) {
   };
 
   const shareBankQr = async () => {
-    if (!userData) return;
+    if (!userData || sharingRef.current) return;
     if (!user?.id) {
       requireSignInToShare();
       return;
     }
 
+    sharingRef.current = true;
+    setSharing(true);
     try {
       const url = buildBankQrShareUrl(userData);
       if (!url) {
         Alert.alert(t('common.error'), t('myCard.noBankQr'));
         return;
       }
+
+      if (!(await confirmWithRewardedAd())) return;
+
+      setSharing(false);
       await shareUrl({ title: t('myCard.shareBankQr'), url });
     } catch (error) {
       Alert.alert(t('common.error'), t('myCard.shareBankFailed'));
+    } finally {
+      sharingRef.current = false;
+      setSharing(false);
     }
   };
 

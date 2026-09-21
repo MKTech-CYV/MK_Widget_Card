@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Bell, CircleUser, QrCode, Settings as SettingsIcon, User } from 'lucide-react-native';
@@ -17,6 +17,14 @@ import { useTheme } from '../constants/Theme';
 import { useAppPreferences } from '../context/AppPreferencesContext';
 import { getTranslation } from '../constants/i18n';
 import QuickTourModal from '../components/QuickTourModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { promptForUpdateIfNeeded } from '../services/AppUpdateService';
+import { AdMobService } from '../services/AdMobService';
+import { useAuth } from '../context/AuthContext';
+import { fetchAdFreeStatus } from '../services/AdFreeService';
+
+const ADS_DISABLED_KEY = 'adsDisabled';
+const AD_FREE_RECHECK_MS = 5 * 60 * 1000;
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -91,13 +99,61 @@ export default function AppNavigator() {
   const { colors, isDark } = useTheme();
   const { language, quickTourCompleted, isReady, completeQuickTour } = useAppPreferences();
   const [showTour, setShowTour] = useState(false);
+  const { user, isAuthReady } = useAuth();
   const t = (key) => getTranslation(language, key);
+
+  // Ad-free accounts (ad_free_users/{uid}, created by an admin): remember the last
+  // known value so it still applies when the app starts offline, refresh it when
+  // the app comes back to the foreground, and clear it when signed out.
+  useEffect(() => {
+    AsyncStorage.getItem(ADS_DISABLED_KEY)
+      .then((value) => { if (value === '1') AdMobService.setAdsDisabled(true); })
+      .catch(() => null);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthReady) return undefined;
+
+    if (!user?.id) {
+      AdMobService.setAdsDisabled(false);
+      AsyncStorage.removeItem(ADS_DISABLED_KEY).catch(() => null);
+      return undefined;
+    }
+
+    let lastCheck = 0;
+    const refresh = async () => {
+      lastCheck = Date.now();
+      const adFree = await fetchAdFreeStatus(user.id);
+      if (adFree === null) return;
+
+      AdMobService.setAdsDisabled(adFree);
+      AsyncStorage.setItem(ADS_DISABLED_KEY, adFree ? '1' : '0').catch(() => null);
+    };
+
+    refresh();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && Date.now() - lastCheck > AD_FREE_RECHECK_MS) refresh();
+    });
+    return () => subscription.remove();
+  }, [isAuthReady, user?.id]);
 
   useEffect(() => {
     if (isReady && !quickTourCompleted) {
       setShowTour(true);
     }
   }, [isReady, quickTourCompleted]);
+
+  // Ask users on an older store build to update, once the quick tour (if any)
+  // is out of the way.
+  useEffect(() => {
+    if (!isReady || showTour) return undefined;
+
+    const timer = setTimeout(() => {
+      promptForUpdateIfNeeded({ t, language }).catch(() => null);
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, showTour]);
 
   return (
     <>

@@ -258,8 +258,20 @@ const translations = {
       ecardFallback: 'eCard',
       bankFallback: 'QR Bank',
     },
+    update: {
+      title: 'Có phiên bản mới',
+      message: 'Phiên bản {latest} đã có trên {store}. Cập nhật để dùng các tính năng mới nhất và bảo mật tốt hơn.',
+      messageForced: 'Phiên bản bạn đang dùng đã cũ. Vui lòng cập nhật lên phiên bản {latest} trên {store} để tiếp tục sử dụng.',
+      now: 'Cập nhật',
+      later: 'Để sau',
+      storeIos: 'App Store',
+      storeAndroid: 'Google Play',
+    },
     ads: {
       rewardHint: 'Xem 1 quảng cáo ngắn để tiếp tục',
+      sectionTitle: 'Quảng cáo',
+      disabledLabel: 'Không hiển thị quảng cáo',
+      disabledDesc: 'Tài khoản của bạn đang được tắt quảng cáo',
     },
     scan: {
       cameraPermissionTitle: 'Quyền truy cập Camera',
@@ -649,8 +661,20 @@ const translations = {
       block8Title: '8. User control and contact',
       block8Content: 'You can edit data in My eCard, delete or update saved account presets, sign out, delete your account (including all account data), clear app data, or uninstall the app. For support or account data requests, contact contact@mktechvn.com.',
     },
+    update: {
+      title: 'New version available',
+      message: 'Version {latest} is available on {store}. Update to get the latest features and better security.',
+      messageForced: 'Your version is out of date. Please update to version {latest} on {store} to keep using the app.',
+      now: 'Update',
+      later: 'Later',
+      storeIos: 'App Store',
+      storeAndroid: 'Google Play',
+    },
     ads: {
       rewardHint: 'Watch a short ad to continue',
+      sectionTitle: 'Ads',
+      disabledLabel: 'Ad-free',
+      disabledDesc: 'Ads are turned off for your account',
     },
     scan: {
       cameraPermissionTitle: 'Camera access',
